@@ -206,33 +206,24 @@ class Stream(object):
         offset += self.HASH_SIZE
 
         metadata_len = struct.unpack("<L", block[offset:offset+self.UINT32_SIZE])[0]
-        print("metadata len %d" % metadata_len)
         offset += self.UINT32_SIZE
         metadata = block[offset:offset + metadata_len]
-        print(metadata)
         offset += metadata_len
 
         content_len = struct.unpack("<Q", block[offset:offset+self.UINT64_SIZE])[0]
-        print("content len: %d" % content_len)
         offset += self.UINT64_SIZE
-        print(offset)
 
         content = block[offset:offset + content_len]
         offset += content_len
-        print(offset)
 
         hash = block[offset:offset + self.HASH_SIZE]
         offset += self.HASH_SIZE
-        print(offset)
 
         signature_len = struct.unpack("<L", block[offset:offset+self.UINT32_SIZE])[0]
-        print("sig len: %d" % signature_len)
         offset += self.UINT32_SIZE
-        print(offset)
 
         signature = block[offset:offset + signature_len]
         offset += signature_len
-        print(offset)
 
         sha = sha256()
         sha.update(block[:(len(block) -  self.HASH_SIZE - self.UINT32_SIZE - signature_len)])
@@ -241,12 +232,10 @@ class Stream(object):
         with open("/tmp/read.bin", "wb") as f:
             f.write(block[:(len(block) -  self.HASH_SIZE - self.UINT32_SIZE - signature_len)])
 
-        print("digest: ", digest)
-        print("hash: ", hash)
         if digest != hash:
             raise BlockHashVerifyFailureException
 
-        self._verify_block(block[:(len(block) - signature_len)], signature)
+        self._verify_block(block[:(len(block) - self.UINT32_SIZE - signature_len)], signature)
    
 
     def read_block(self, index):
@@ -271,7 +260,6 @@ class Stream(object):
 
         try:
             block_size = struct.unpack("<Q", block_size_raw)[0]
-            print("block size raw: %d" % block_size)
             if block_size < self.UINT64_SIZE + 1 or block_size > self.MAX_BLOCK_SIZE:
                 raise ExceptionCorruptStream
 
@@ -336,15 +324,11 @@ class Stream(object):
         metadata_len = len(metadata)
         content_len = len(content) 
 
-        print("metadata len: %d" % metadata_len)
-        print("content len: %d" % content_len)
-
         sha = sha256()
 
         if prev_block_hash:
             block_data = bytes(prev_block_hash.digest())
         else:
-            print("got no hash")
             block_data = bytes(b'\0' * self.HASH_SIZE)
 
         block_data += struct.pack("<L", metadata_len)
@@ -352,12 +336,13 @@ class Stream(object):
         block_data += struct.pack("<Q", content_len)
         block_data += content
 
-        with open("/tmp/write.bin", "wb") as f:
-            f.write(block_data)
-
         sha.update(block_data)
         digest = sha.digest()
         block_data += digest
+
+        with open("/tmp/write.bin", "wb") as f:
+            f.write(block_data)
+
         signature = self._sign_block(block_data)
         block_data += struct.pack("<L", len(signature))
         block_data += signature
