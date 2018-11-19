@@ -1,4 +1,4 @@
-import os
+
 import sys
 import struct
 from hashlib import sha256
@@ -102,7 +102,6 @@ class Stream(object):
         return public_key
 
 
-
     def set_stream_signature_keys(self, public_key_filename, private_key_filename = None):
         '''
             Set the public key for verifying data in the stream. Optionally, 
@@ -130,19 +129,18 @@ class Stream(object):
             self.stream_content_key_private = self._load_private_key(stream_signature_key_private_filename)
 
 
-    def create_with_handle(self, fhandle, manifest_block):
+    def create_with_handle(self, fhandle, manifest_metadata):
         '''
             Open a new stream, based on the file-like handle. The stream must be empty.
         '''
 
         self.fhandle = fhandle
-        manifest_block[MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY] = self._serialize_public_key(self.stream_signature_key_public) 
+        manifest_metadata[MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY] = self._serialize_public_key(self.stream_signature_key_public) 
         self.last_block_hash = sha256()
-        self.append(manifest_block, bytes())
+        self.append(manifest_metadata, bytes())
 
 
-    # TODO: manifest_block should be called manifest_metadata
-    def create(self, filename, manifest_block):
+    def create(self, filename, manifest_metadata):
         '''
             Open a new file based stream. The stream file must not exist.
         '''
@@ -150,10 +148,10 @@ class Stream(object):
         if os.path.exists(filename):
             raise IOError("File exists")
 
-        if not manifest_block:
-            raise ValueError("Missing manifest_block")
+        if not manifest_metadata:
+            raise ValueError("Missing manifest_metadata")
 
-        self.create_with_handle(open(filename, "wb"), manifest_block)
+        self.create_with_handle(open(filename, "wb"), manifest_metadata)
 
 
     def open(self, filename):
@@ -161,21 +159,17 @@ class Stream(object):
             Open a stream using a filename
         '''
 
-        self.fhandle = open(filename, "rb")
-        self.current_block = self.current_block_pos = -1
-        self.manifest_block = self.read_block(0)
+        fhandle = open(filename, "rb")
+        return self.open_with_handle(fhandle)
 
 
-    def _open(self, fhandle):
+    def open_with_handle(self, fhandle):
         ''' 
             Open a file given a file-like object
         '''
 
-        if not self.stream_signature_key_public:
-            raise ExceptionMissingStreamSignatureKey
-
+        self.fhandle = fhandle
         self.current_block = self.current_block_pos = -1 
-        self.manifest_block = self.read_block(0)
 
 
     def close(self, close_handle=True):
