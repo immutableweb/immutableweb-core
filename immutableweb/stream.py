@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
+from cryptography.exceptions import InvalidSignature
 
 class ExceptionMissingStreamSignatureKey(Exception):
     pass
@@ -33,11 +34,17 @@ class ExceptionCorruptStream(Exception):
 class ExceptionWriteError(Exception):
     pass
 
+class BlockHashVerifyFailureException(Exception):
+    pass
+
+class BlockSignatureVerifyFailureException(Exception):
+    pass
+
 class Stream(object):
 
     UINT32_SIZE    = 4  # For metadata, signature sizes
     UINT64_SIZE    = 8  # For content size
-    HASH_SIZE      = 8  # For sha256
+    HASH_SIZE      = 32 # For sha256
     MAX_BLOCK_SIZE = 4294967295 # (2 ^ 32) - 1
     MANIFEST_BLOCK = 0
 
@@ -72,8 +79,7 @@ class Stream(object):
 
 
     def _serialize_public_key(self, key):
-        public_key = key.public_key()
-        pem = public_key.public_bytes(
+        pem = key.public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo)
 
@@ -111,20 +117,7 @@ class Stream(object):
         '''
             Open a new stream, based on the file-like handle. The stream must be empty.
         '''
-
-        handle.seek(BEGIN)
-        offset = handle.tell()
-
-        if offset != 0:
-            raise ExceptionFileNotEmpty
-
-        if not manifest_block:
-            raise ExceptionMissingManifestBlock
-
-        manifest_block["_stream_signature-public_key"] = self._serialize_public_key(self.stream_signature_key_public) 
-
-        self.fhandle = fhandle
-        self.append(0, content=bytes(ujson.dumps(manifest_block), "utf-8"))
+        pass
 
 
     def create(self, filename, manifest_block):
@@ -138,8 +131,10 @@ class Stream(object):
         if not manifest_block:
             raise ExceptionMissingManifestBlock
 
+        manifest_block["_stream_signature-public_key"] = self._serialize_public_key(self.stream_signature_key_public) 
+
         self.fhandle = open(filename, "wb")
-        self.append(0, content=bytes(ujson.dumps(manifest_block), "utf-8"))
+        self.append(0, metadata=manifest_block, content=bytes())
 
 
     def open(self, filename):
@@ -189,11 +184,11 @@ class Stream(object):
 
     def _seek_to_next_block(self):
         try:
-            block_size = struct.unpack("<Q", self.fhandle.read(self.SIZE_TYPE_SIZE))[0]
-            if block_size < self.SIZE_TYPE_SIZE + 1 or block_size > self.MAX_BLOCK_SIZE:
+            block_size = struct.unpack("<Q", self.fhandle.read(self.UINT64_SIZE))[0]
+            if block_size < self.UINT64_SIZE + 1 or block_size > self.MAX_BLOCK_SIZE:
                 raise ExceptionCorruptStream
 
-            self.fhandle.seek(block_size - self.SIZE_TYPE_SIZE, 1)
+            self.fhandle.seek(block_size - self.UINT64_SIZE, 1)
         except IOError:
             self.current_block = self.current_block_pos = -1
             return 0
@@ -204,7 +199,54 @@ class Stream(object):
         return block_size
 
     def _validate_and_parse_block(self, block):
-        return block
+
+        offset = 0
+
+        prev_block_hash = block[offset:offset + self.HASH_SIZE]
+        offset += self.HASH_SIZE
+
+        metadata_len = struct.unpack("<L", block[offset:offset+self.UINT32_SIZE])[0]
+        print("metadata len %d" % metadata_len)
+        offset += self.UINT32_SIZE
+        metadata = block[offset:offset + metadata_len]
+        print(metadata)
+        offset += metadata_len
+
+        content_len = struct.unpack("<Q", block[offset:offset+self.UINT64_SIZE])[0]
+        print("content len: %d" % content_len)
+        offset += self.UINT64_SIZE
+        print(offset)
+
+        content = block[offset:offset + content_len]
+        offset += content_len
+        print(offset)
+
+        hash = block[offset:offset + self.HASH_SIZE]
+        offset += self.HASH_SIZE
+        print(offset)
+
+        signature_len = struct.unpack("<L", block[offset:offset+self.UINT32_SIZE])[0]
+        print("sig len: %d" % signature_len)
+        offset += self.UINT32_SIZE
+        print(offset)
+
+        signature = block[offset:offset + signature_len]
+        offset += signature_len
+        print(offset)
+
+        sha = sha256()
+        sha.update(block[:(len(block) -  self.HASH_SIZE - self.UINT32_SIZE - signature_len)])
+        digest = sha.digest()
+
+        with open("/tmp/read.bin", "wb") as f:
+            f.write(block[:(len(block) -  self.HASH_SIZE - self.UINT32_SIZE - signature_len)])
+
+        print("digest: ", digest)
+        print("hash: ", hash)
+        if digest != hash:
+            raise BlockHashVerifyFailureException
+
+        self._verify_block(block[:(len(block) - signature_len)], signature)
    
 
     def read_block(self, index):
@@ -216,7 +258,7 @@ class Stream(object):
             self._seek_to_block(index)
 
         try:
-            block_size_raw = self.fhandle.read(self.SIZE_TYPE_SIZE)
+            block_size_raw = self.fhandle.read(self.UINT64_SIZE)
         except IOError as err:
             raise ExceptionCorruptStream(err)
 
@@ -224,15 +266,16 @@ class Stream(object):
         if num_read == 0:
             return None
 
-        if num_read < self.SIZE_TYPE_SIZE:
+        if num_read < self.UINT64_SIZE:
             raise ExceptionCorruptStream
 
         try:
             block_size = struct.unpack("<Q", block_size_raw)[0]
-            if block_size < self.SIZE_TYPE_SIZE + 1 or block_size > self.MAX_BLOCK_SIZE:
+            print("block size raw: %d" % block_size)
+            if block_size < self.UINT64_SIZE + 1 or block_size > self.MAX_BLOCK_SIZE:
                 raise ExceptionCorruptStream
 
-            block = self.fhandle.read(block_size - self.SIZE_TYPE_SIZE);
+            block = self.fhandle.read(block_size - self.UINT64_SIZE);
         except IOError:
             raise ExceptionCorruptStream
             
@@ -253,8 +296,25 @@ class Stream(object):
         return signature
 
 
+    def _verify_block(self, block, signature):
+        try:
+            signature = self.stream_signature_key_public.verify(
+                signature,
+                block,
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH),
+                hashes.SHA256())
+        except InvalidSignature:
+            raise BlockSignatureVerifyFailureException
+
+
     def _serialize_signature(self, signature):
         return base64.b64encode(signature, altchars=None)
+       
+
+    def _parse_signature(self, signature):
+        return base64.b64decode(signature)
        
 
     def append(self, prev_block_hash, content = None, metadata = None, 
@@ -273,20 +333,28 @@ class Stream(object):
             raise ValueError("content must be type bytes.")
 
         metadata = bytes(ujson.dumps(metadata), 'utf-8')
-        metadata_len = len(metadata) or 0
+        metadata_len = len(metadata)
         content_len = len(content) 
+
+        print("metadata len: %d" % metadata_len)
+        print("content len: %d" % content_len)
 
         sha = sha256()
 
         if prev_block_hash:
             block_data = bytes(prev_block_hash.digest())
         else:
-            block_data = bytes()
+            print("got no hash")
+            block_data = bytes(b'\0' * self.HASH_SIZE)
 
         block_data += struct.pack("<L", metadata_len)
         block_data += metadata
         block_data += struct.pack("<Q", content_len)
         block_data += content
+
+        with open("/tmp/write.bin", "wb") as f:
+            f.write(block_data)
+
         sha.update(block_data)
         digest = sha.digest()
         block_data += digest
@@ -301,3 +369,5 @@ class Stream(object):
             self.fhandle.write(block_data)
         except IOError as err:
             raise ExceptionWriteError(err)
+
+        return sha 
