@@ -395,6 +395,8 @@ class Stream(object):
             Append the block to this stream.
         '''
 
+        # TODO: Make sure that the stream keys match what was provided
+
         if not self.stream_signature_key_private:
             raise MissingKey("Private stream key not set.")
 
