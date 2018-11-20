@@ -1,5 +1,6 @@
 
 import sys
+import os
 import struct
 from hashlib import sha256
 import gnupg
@@ -15,12 +16,13 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.exceptions import InvalidSignature
 
 MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY = "_stream_signature-public_key"
+KEY_VERIFICATION_TEST_MESSAGE = "stop tectonic drift!"
 
 # TODO: Remove many of these and use built in ones
-class ExceptionNoPrivateSignatureKey(Exception):
+class InvalidKeyPair(Exception):
     pass
 
-class ExceptionMissingContentKey(Exception):
+class MissingKey(Exception):
     pass
 
 class ExceptionCorruptStream(Exception):
@@ -43,11 +45,24 @@ class Stream(object):
     MAX_BLOCK_SIZE = 4294967295 # (2 ^ 32) - 1
     MANIFEST_BLOCK = 0
 
+    # These are the various states that this object can be in with regard to the stream:
+    # The stream has not been verified.
+    STATE_UNVERIFIED     = 0
+    # The stream has been verified.
+    STATE_VERIFIED       = 1
+    # The stream has been verified for writing (a valid private key has ben provided)
+    STATE_WRITE_VERIFIED = 2
+    # The stream is corrupt and should not be trusted.
+    STATE_CORRUPTED      = 3
+
     def __init__(self, filename = None):
         self.stream_signature_key_public = None
         self.stream_signature_key_private = None
         self.stream_content_key_public = None
         self.stream_content_key_private = None
+
+        # Current state of the stream object
+        self.current_state = self.STATE_UNVERIFIED
 
         # Keep track of the current block ready to read, or -1 if not set.
         self.current_block = -1
@@ -55,6 +70,7 @@ class Stream(object):
         # Keep track of the current block position ready to read, or -1 if not set.
         self.current_block_pos = -1
 
+        # keep track of the last block's hash value
         self.last_block_hash = None
 
         if filename:
@@ -67,6 +83,10 @@ class Stream(object):
 
     def __exit__(self, type, value, traceback):
         self.close()
+
+    @property
+    def state(self):
+        return self.current_state
 
 
     def _load_private_key(self, filename):
@@ -110,11 +130,23 @@ class Stream(object):
             the stream is required.
         '''
         if public_key_filename:
-            self.stream_signature_key_public = self._load_public_key(public_key_filename)
+            public_key = self._load_public_key(public_key_filename)
+        else:
+            public_key = None
+
         if private_key_filename:
-            self.stream_signature_key_private = self._load_private_key(private_key_filename)
+            private_key = self._load_private_key(private_key_filename)
+        else:
+            private_key = None
+
+        if public_key and private_key:
+            self._validate_key_pair(private_key, public_key)
+
+        self.stream_signature_key_public = public_key
+        self.stream_signature_key_private = private_key
 
 
+    # TODO: Implement stream wide keys
     def set_stream_content_keys(self, public_key_filename, private_key_filename = None):
         ''' 
             Set the encyption keys to be used by the whole stream. If the caller plans to 
@@ -124,9 +156,47 @@ class Stream(object):
             stream level encryption keys.
         '''
         if public_key_filename:
-            self.stream_contet_key_public = self._load_public_key(stream_signature_key_public_filename)
+            public_key = self._load_public_key(public_key_filename)
+        else:
+            public_key = None
+
         if private_key_filename:
-            self.stream_content_key_private = self._load_private_key(stream_signature_key_private_filename)
+            private_key = self._load_private_key(private_key_filename)
+        else:
+            private_key = None
+
+        if public_key and private_key:
+            self._validate_key_pair(self.stream_signature_key_private, self.stream_signature_key_public)
+
+        self.stream_content_key_public = public_key
+        self.stream_content_key_private = private_key
+
+
+    def _validate_key_pair(self, private_key, public_key):
+        '''
+            Does a round-trip encryption in order to ensure that the provided 
+            keys actually work as expected.
+        '''
+
+        msg = bytes(KEY_VERIFICATION_TEST_MESSAGE, 'utf-8')
+        try:
+            encrypted = public_key.encrypt(
+                msg,
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None))
+            decrypted = private_key.decrypt(
+                encrypted,
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None))
+            if msg != decrypted:
+                raise InvalidKeyPair
+
+        except ValueError:
+            raise InvalidKeyPair
 
 
     def create_with_handle(self, fhandle, manifest_metadata):
@@ -135,6 +205,7 @@ class Stream(object):
         '''
 
         self.fhandle = fhandle
+        self.fhandle.seek(0, 0)
         manifest_metadata[MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY] = self._serialize_public_key(self.stream_signature_key_public) 
         self.last_block_hash = sha256()
         self.append(manifest_metadata, bytes())
@@ -325,15 +396,13 @@ class Stream(object):
         '''
 
         if not self.stream_signature_key_private:
-            raise(ExceptionNoPrivateSignatureKey)
+            raise MissingKey("Private stream key not set.")
 
-        if (public_key or private_key) and (not private_key or not public_key):
-            raise(ExceptionMissingContentKey)
+        if not self.stream_signature_key_public:
+            raise MissingKey("Public stream key not set.")
 
         if type(content) is not bytes:
             raise ValueError("content must be type bytes.")
-
-        # TODO: check that user is allowed to write to this stream
 
         metadata = bytes(ujson.dumps(metadata), 'utf-8')
         metadata_len = len(metadata)
