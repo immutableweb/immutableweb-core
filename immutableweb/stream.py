@@ -25,6 +25,9 @@ class InvalidKeyPair(Exception):
 class MissingKey(Exception):
     pass
 
+class InvalidState(Exception):
+    pass
+
 class ExceptionCorruptStream(Exception):
     pass
 
@@ -83,6 +86,7 @@ class Stream(object):
 
     def __exit__(self, type, value, traceback):
         self.close()
+
 
     @property
     def state(self):
@@ -204,23 +208,29 @@ class Stream(object):
             Open a new stream, based on the file-like handle. The stream must be empty.
         '''
 
+        if not manifest_metadata:
+            raise ValueError("Missing manifest_metadata")
+
         self.fhandle = fhandle
-        self.fhandle.seek(0, 0)
+        self.fhandle.seek(0, 2)
+        if self.fhandle.tell() != 0:
+            raise ValueError("Stream file not empty.")
+
         manifest_metadata[MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY] = self._serialize_public_key(self.stream_signature_key_public) 
         self.last_block_hash = sha256()
+
+        self.current_state = self.STATE_WRITE_VERIFIED
         self.append(manifest_metadata, bytes())
 
 
     def create(self, filename, manifest_metadata):
         '''
-            Open a new file based stream. The stream file must not exist.
+            Open a new file based stream. The stream must not exist. Most of the 
+            opening work is actually done by open_with_handle()
         '''
 
         if os.path.exists(filename):
             raise IOError("File exists")
-
-        if not manifest_metadata:
-            raise ValueError("Missing manifest_metadata")
 
         self.create_with_handle(open(filename, "wb"), manifest_metadata)
 
@@ -241,6 +251,8 @@ class Stream(object):
 
         self.fhandle = fhandle
         self.current_block = self.current_block_pos = -1 
+
+        self.read_block(0)
 
 
     def close(self, close_handle=True):
@@ -320,6 +332,8 @@ class Stream(object):
                 bytes(metadata[MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY], "utf-8"))
 
         self._verify_block(block[:(len(block) - self.UINT32_SIZE - signature_len)], signature)
+
+        return (metadata, content)
    
 
     def read_block(self, index):
@@ -327,34 +341,43 @@ class Stream(object):
             Read and return the requested block. 
         '''
 
+        if self.current_state == self.STATE_CORRUPTED:
+            raise ExceptionCorruptStream("Refusing to read from corrupted stream.")
+
         if self.current_block >= 0 and self.current_block != index:
             self._seek_to_block(index)
 
         try:
             block_size_raw = self.fhandle.read(self.UINT64_SIZE)
         except IOError as err:
+            self.current_state = STATE_CORRUPTED
             raise ExceptionCorruptStream(err)
 
         num_read = len(block_size_raw)
         if num_read == 0:
-            return None
+            return (None, None)
 
         if num_read < self.UINT64_SIZE:
+            self.current_state = self.STATE_CORRUPTED
             raise ExceptionCorruptStream
 
         try:
             block_size = struct.unpack("<Q", block_size_raw)[0]
             if block_size < self.UINT64_SIZE + 1 or block_size > self.MAX_BLOCK_SIZE:
+                self.current_state = self.STATE_CORRUPTED
                 raise ExceptionCorruptStream
 
             block = self.fhandle.read(block_size - self.UINT64_SIZE);
         except IOError:
+            self.current_state = self.STATE_CORRUPTED
             raise ExceptionCorruptStream
             
-        self._validate_and_parse_block(block)
+        metadata, content = self._validate_and_parse_block(block)
 
         self.current_block = index + 1
         self.current_block_pos = self.fhandle.tell()
+
+        return (metadata, content)
 
 
     def _sign_block(self, block):
@@ -378,16 +401,9 @@ class Stream(object):
                     salt_length=padding.PSS.MAX_LENGTH),
                 hashes.SHA256())
         except InvalidSignature:
+            self.current_state = self.STATE_CORRUPTED
             raise BlockSignatureVerifyFailureException
 
-
-    def _serialize_signature(self, signature):
-        return base64.b64encode(signature, altchars=None)
-       
-
-    def _parse_signature(self, signature):
-        return base64.b64decode(signature)
-       
 
     def append(self, metadata, content = None, 
                public_key=None, private_key=None):
@@ -395,7 +411,8 @@ class Stream(object):
             Append the block to this stream.
         '''
 
-        # TODO: Make sure that the stream keys match what was provided
+        if self.state != self.STATE_WRITE_VERIFIED:
+            raise InvalidState("Stream not in verified for write state, cannot append.") 
 
         if not self.stream_signature_key_private:
             raise MissingKey("Private stream key not set.")

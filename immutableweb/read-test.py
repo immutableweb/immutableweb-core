@@ -10,11 +10,11 @@ def read_stream(stream_filename):
         with stream.Stream(stream_filename) as s:
             block_index = 1
             while True:
-                block = s.read_block(block_index)
-                if not block:
+                metadata, content = s.read_block(block_index)
+                if not content:
                     break
 
-                print("%d: %s" % (block_index, block))
+                print("%d: %s" % (block_index, content))
                 block_index += 1
 
     except stream.BlockSignatureVerifyFailureException:
