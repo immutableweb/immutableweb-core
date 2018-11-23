@@ -3,7 +3,6 @@ import sys
 import os
 import struct
 from hashlib import sha256
-import gnupg
 import ujson
 import base64
 
@@ -216,6 +215,12 @@ class Stream(object):
         if self.fhandle.tell() != 0:
             raise ValueError("Stream file not empty.")
 
+        if not self.stream_signature_key_public: 
+            raise MissingKey("Public stream key is missing.")
+
+        if not self.stream_signature_key_private: 
+            raise MissingKey("Private stream key is missing.")
+
         manifest_metadata[MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY] = self._serialize_public_key(self.stream_signature_key_public) 
         self.last_block_hash = sha256()
 
@@ -223,13 +228,13 @@ class Stream(object):
         self.append(manifest_metadata, bytes())
 
 
-    def create(self, filename, manifest_metadata):
+    def create(self, filename, manifest_metadata, force=False):
         '''
             Open a new file based stream. The stream must not exist. Most of the 
             opening work is actually done by open_with_handle()
         '''
 
-        if os.path.exists(filename):
+        if not force and os.path.exists(filename):
             raise IOError("File exists")
 
         self.create_with_handle(open(filename, "wb"), manifest_metadata)
@@ -405,7 +410,7 @@ class Stream(object):
             raise BlockSignatureVerifyFailureException
 
 
-    def append(self, metadata, content = None, 
+    def append(self, metadata = None, content = None, 
                public_key=None, private_key=None):
         '''
             Append the block to this stream.
@@ -422,6 +427,9 @@ class Stream(object):
 
         if type(content) is not bytes:
             raise ValueError("content must be type bytes.")
+
+        if self.current_block < 0 and not metadata:
+            raise ValueError("Metadata for block 0 (aka the manifest block) must be given.")
 
         metadata = bytes(ujson.dumps(metadata), 'utf-8')
         metadata_len = len(metadata)
@@ -445,6 +453,7 @@ class Stream(object):
         block_data += digest
 
         self.last_block_hash = sha
+        self.current_block += 1
 
         signature = self._sign_block(block_data)
         block_data += struct.pack("<L", len(signature))
