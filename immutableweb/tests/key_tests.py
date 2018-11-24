@@ -61,7 +61,7 @@ class TestKeys(unittest.TestCase):
         try:
             s.verify()
             self.assertEquals(s.state, stream.Stream.STATE_VERIFIED)
-        except (stream.InvalidKeyPair, stream.ExceptionCorruptStream, stream.BlockHashVerifyFailureException, stream.BlockSignatureVerifyFailureException):
+        except (stream.InvalidKeyPair, stream.StreamCorrupt, stream.HashFailure, stream.SignatureFailure):
             self.fail("Stream failed to verify")
             return
 

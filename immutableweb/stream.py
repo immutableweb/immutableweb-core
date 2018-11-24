@@ -136,7 +136,7 @@ class Stream(object):
         try:
             block_size = struct.unpack("<Q", self.fhandle.read(self.UINT64_SIZE))[0]
             if block_size < self.UINT64_SIZE + 1 or block_size > self.MAX_BLOCK_SIZE:
-                raise ExceptionCorruptStream
+                raise StreamCorrupt
 
             self.fhandle.seek(block_size - self.UINT64_SIZE, 1)
         except IOError:
@@ -192,7 +192,7 @@ class Stream(object):
         digest = sha.digest()
 
         if digest != hash:
-            raise exc.BlockHashVerifyFailureException
+            raise exc.HashFailure
 
         if self.current_block == 0:
             self.stream_signature_key_public = crypto.deserialize_public_key( \
@@ -200,7 +200,7 @@ class Stream(object):
 
         try:
             crypto.verify(self.stream_signature_key_public, block[:(len(block) - self.UINT32_SIZE - signature_len)], signature)
-        except exc.BlockSignatureVerifyFailureException:
+        except exc.SignatureFailure:
             self.current_state = self.STATE_CORRUPTED
             raise
 
@@ -316,7 +316,7 @@ class Stream(object):
         '''
 
         if self.current_state == self.STATE_CORRUPTED:
-            raise ExceptionCorruptStream("Stream corrupted, refusing to read.")
+            raise StreamCorrupt("Stream corrupted, refusing to read.")
 
         if self.current_block >= 0 and self.current_block != index:
             self._seek_to_block(index)
@@ -325,7 +325,7 @@ class Stream(object):
             block_size_raw = self.fhandle.read(self.UINT64_SIZE)
         except IOError as err:
             self.current_state = STATE_CORRUPTED
-            raise ExceptionCorruptStream(err)
+            raise StreamCorrupt(err)
 
         num_read = len(block_size_raw)
         if num_read == 0:
@@ -333,18 +333,18 @@ class Stream(object):
 
         if num_read < self.UINT64_SIZE:
             self.current_state = self.STATE_CORRUPTED
-            raise ExceptionCorruptStream
+            raise StreamCorrupt
 
         try:
             block_size = struct.unpack("<Q", block_size_raw)[0]
             if block_size < self.UINT64_SIZE + 1 or block_size > self.MAX_BLOCK_SIZE:
                 self.current_state = self.STATE_CORRUPTED
-                raise ExceptionCorruptStream
+                raise StreamCorrupt
 
             block = self.fhandle.read(block_size - self.UINT64_SIZE);
         except IOError:
             self.current_state = self.STATE_CORRUPTED
-            raise ExceptionCorruptStream
+            raise StreamCorrupt
             
         metadata, content, hash = self._validate_and_parse_block(block)
 

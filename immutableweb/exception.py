@@ -8,14 +8,11 @@ class MissingKey(Exception):
 class InvalidState(Exception):
     pass
 
-class ExceptionCorruptStream(Exception):
+class StreamCorrupt(Exception):
     pass
 
-class BlockHashVerifyFailureException(Exception):
+class HashFailure(Exception):
     pass
 
-class BlockSignatureVerifyFailureException(Exception):
-    pass
-
-class ExceptionStreamNotVerified(Exception):
+class SignatureFailure(Exception):
     pass
