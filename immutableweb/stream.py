@@ -1,4 +1,3 @@
-
 import sys
 import os
 import struct
@@ -6,38 +5,10 @@ from hashlib import sha256
 import ujson
 import base64
 
-#TODO: move into separate module for separation
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import padding
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import serialization
-from cryptography.exceptions import InvalidSignature
+from immutableweb import crypto
+from immutableweb import exception as exc
 
 MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY = "_stream_signature-public_key"
-KEY_VERIFICATION_TEST_MESSAGE = "stop tectonic drift!"
-
-# TODO: Remove many of these and use built in ones
-class InvalidKeyPair(Exception):
-    pass
-
-class MissingKey(Exception):
-    pass
-
-class InvalidState(Exception):
-    pass
-
-class ExceptionCorruptStream(Exception):
-    pass
-
-class BlockHashVerifyFailureException(Exception):
-    pass
-
-class BlockSignatureVerifyFailureException(Exception):
-    pass
-
-class ExceptionStreamNotVerified(Exception):
-    pass
 
 class Stream(object):
 
@@ -92,39 +63,6 @@ class Stream(object):
         return self.current_state
 
 
-    def _load_private_key(self, filename):
-        with open(filename, "rb") as key_file:
-             private_key = serialization.load_pem_private_key(
-                 key_file.read(),
-                 password=None,
-                 backend=default_backend())
-        return private_key
-
-
-    def _load_public_key(self, filename):
-        with open(filename, "rb") as key_file:
-             public_key = serialization.load_pem_public_key(
-                 key_file.read(),
-                 backend=default_backend())
-        return public_key
-
-
-    def _serialize_public_key(self, key):
-        pem = key.public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo)
-
-        return pem.decode('utf-8')
-
-
-    def _deserialize_public_key(self, pem):
-        public_key = serialization.load_pem_public_key(
-            pem,
-            backend=default_backend())
-
-        return public_key
-
-
     def set_stream_signature_keys(self, public_key_filename, private_key_filename = None):
         '''
             Set the public key for verifying data in the stream. Optionally, 
@@ -134,21 +72,21 @@ class Stream(object):
         '''
 
         if public_key_filename:
-            public_key = self._load_public_key(public_key_filename)
+            public_key = crypto.load_public_key(public_key_filename)
         else:
             public_key = None
 
         if private_key_filename:
-            private_key = self._load_private_key(private_key_filename)
+            private_key = crypto.load_private_key(private_key_filename)
         else:
             private_key = None
 
         if self.stream_signature_key_public and \
-           self._serialize_public_key(public_key) != self._serialize_public_key(self.stream_signature_key_public):
-            raise InvalidKeyPair
+           crypto.serialize_public_key(public_key) != crypto.serialize_public_key(self.stream_signature_key_public):
+            raise exc.InvalidKeyPair
 
         if public_key and private_key:
-            self._validate_key_pair(private_key, public_key)
+            crypto.validate_key_pair(private_key, public_key)
             if self.current_state == self.STATE_VERIFIED:
                 self.current_state = self.STATE_WRITE_VERIFIED
 
@@ -166,52 +104,23 @@ class Stream(object):
             stream level encryption keys.
         '''
         if public_key_filename:
-            public_key = self._load_public_key(public_key_filename)
+            public_key = crypto.load_public_key(public_key_filename)
         else:
             public_key = None
 
         if private_key_filename:
-            private_key = self._load_private_key(private_key_filename)
+            private_key = crypto.load_private_key(private_key_filename)
         else:
             private_key = None
 
-        if public_key._serialize_public_key() != self.stream_signature_public_key._serialize_public_key():
-            raise InvalidKeyPair("Public key does not match key found in stream.")
+        if crypto.serialize_public_key() != crypto.serialize_public_key(self.stream_signature_public_key):
+            raise exc.InvalidKeyPair("Public key does not match key found in stream.")
 
         if public_key and private_key:
-            self._validate_key_pair(self.stream_signature_key_private, self.stream_signature_key_public)
+            crypto.validate_key_pair(self.stream_signature_key_private, self.stream_signature_key_public)
 
         self.stream_content_key_public = public_key
         self.stream_content_key_private = private_key
-
-
-    def _validate_key_pair(self, private_key, public_key):
-        '''
-            Does a round-trip encryption in order to ensure that the provided 
-            keys actually work as expected.
-        '''
-
-        msg = bytes(KEY_VERIFICATION_TEST_MESSAGE, 'utf-8')
-        try:
-            encrypted = public_key.encrypt(
-                msg,
-                padding.OAEP(
-                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                    algorithm=hashes.SHA256(),
-                    label=None))
-            decrypted = private_key.decrypt(
-                encrypted,
-                padding.OAEP(
-                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                    algorithm=hashes.SHA256(),
-                    label=None))
-            if msg != decrypted:
-                raise InvalidKeyPair
-
-        except ValueError:
-            raise InvalidKeyPair
-
-
 
 
     def _seek_to_beginning(self):
@@ -249,31 +158,6 @@ class Stream(object):
                 return
 
 
-    def _sign_block(self, block):
-        signature = self.stream_signature_key_private.sign(
-            block,
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH),
-            hashes.SHA256())
-
-        return signature
-
-
-    def _verify_block(self, block, signature):
-        try:
-            signature = self.stream_signature_key_public.verify(
-                signature,
-                block,
-                padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH),
-                hashes.SHA256())
-        except InvalidSignature:
-            self.current_state = self.STATE_CORRUPTED
-            raise BlockSignatureVerifyFailureException
-
-
     def _validate_and_parse_block(self, block):
 
         offset = 0
@@ -308,13 +192,17 @@ class Stream(object):
         digest = sha.digest()
 
         if digest != hash:
-            raise BlockHashVerifyFailureException
+            raise exc.BlockHashVerifyFailureException
 
         if self.current_block == 0:
-            self.stream_signature_key_public = self._deserialize_public_key( \
+            self.stream_signature_key_public = crypto.deserialize_public_key( \
                 bytes(metadata[MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY], "utf-8"))
 
-        self._verify_block(block[:(len(block) - self.UINT32_SIZE - signature_len)], signature)
+        try:
+            crypto.verify(self.stream_signature_key_public, block[:(len(block) - self.UINT32_SIZE - signature_len)], signature)
+        except exc.BlockSignatureVerifyFailureException:
+            self.current_state = self.STATE_CORRUPTED
+            raise
 
         return (metadata, content, sha)
   
@@ -333,12 +221,12 @@ class Stream(object):
             raise ValueError("Stream file not empty.")
 
         if not self.stream_signature_key_public: 
-            raise MissingKey("Public stream key is missing.")
+            raise exc.MissingKey("Public stream key is missing.")
 
         if not self.stream_signature_key_private: 
-            raise MissingKey("Private stream key is missing.")
+            raise exc.MissingKey("Private stream key is missing.")
 
-        manifest_metadata[MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY] = self._serialize_public_key(self.stream_signature_key_public) 
+        manifest_metadata[MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY] = crypto.serialize_public_key(self.stream_signature_key_public) 
         self.last_block_hash = sha256()
 
         self.current_state = self.STATE_WRITE_VERIFIED
@@ -417,7 +305,7 @@ class Stream(object):
 
         self.current_state = self.STATE_VERIFIED
 
-        if public_key and public_key == self._serialize_public_key(self.stream_signature_key_public):
+        if public_key and public_key == crypto.serialize_public_key(self.stream_signature_key_public):
             if self.stream_signature_key_private:
                 self.current_state = self.STATE_WRITE_VERIFIED
 
@@ -473,13 +361,13 @@ class Stream(object):
         '''
 
         if self.current_state != self.STATE_WRITE_VERIFIED:
-            raise InvalidState("Stream not in verified for write state, cannot append.") 
+            raise exc.InvalidState("Stream not in verified for write state, cannot append.") 
 
         if not self.stream_signature_key_private:
-            raise MissingKey("Private stream key not set.")
+            raise exc.MissingKey("Private stream key not set.")
 
         if not self.stream_signature_key_public:
-            raise MissingKey("Public stream key not set.")
+            raise exc.MissingKey("Public stream key not set.")
 
         if type(content) is not bytes:
             raise ValueError("content must be type bytes.")
@@ -496,7 +384,7 @@ class Stream(object):
         if self.last_block_hash:
             last_hash = self.last_block_hash
         else:
-            raise InvalidState("last block hash not set, stream not valid.")
+            raise exc.InvalidState("last block hash not set, stream not valid.")
 
         block_data = bytes(last_hash.digest())
         block_data += struct.pack("<L", metadata_len)
@@ -511,7 +399,7 @@ class Stream(object):
         self.last_block_hash = sha
         self.current_block += 1
 
-        signature = self._sign_block(block_data)
+        signature = crypto.sign(self.stream_signature_key_private, block_data)
         block_data += struct.pack("<L", len(signature))
         block_data += signature
         block_len = self.UINT64_SIZE + len(block_data)
