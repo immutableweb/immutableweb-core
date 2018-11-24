@@ -6,7 +6,7 @@ import unittest
 
 class TestStreamFileIO(unittest.TestCase):
 
-    def test_file_existence(cls):
+    def test_file_existence(self):
         private_key, public_key = key.make_key_pair()
         with open("__test-public.pem", "wb") as f:
             f.write(key.get_public_key_pem(public_key))
@@ -15,10 +15,10 @@ class TestStreamFileIO(unittest.TestCase):
 
         s = stream.Stream()
         s.set_stream_signature_keys("__test-public.pem", "__test-private.pem")
-        cls.assertRaises(IOError, s.create, "__test.im", { 'foo' : "bar" })
+        self.assertRaises(IOError, s.create, "__test.im", { 'foo' : "bar" })
 
 
-    def test_file_existence_override(cls):
+    def test_file_existence_override(self):
         private_key, public_key = key.make_key_pair()
         with open("__test-public.pem", "wb") as f:
             f.write(key.get_public_key_pem(public_key))
@@ -30,10 +30,10 @@ class TestStreamFileIO(unittest.TestCase):
         try:
             s.create("__test.im", { 'foo' : "bar" }, force=True)
         except IOError as err:
-            cls.fail("Force overwrite file dowes not throw the expected exception.")
+            self.fail("Force overwrite file dowes not throw the expected exception.")
             return
 
 
-    def test_missing_file(cls):
+    def test_missing_file(self):
         s = stream.Stream()
-        cls.assertRaises(FileNotFoundError, s.open, "__doesnotexist.im")
+        self.assertRaises(FileNotFoundError, s.open, "__doesnotexist.im")

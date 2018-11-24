@@ -57,7 +57,7 @@ class Stream(object):
     # The stream is corrupt and should not be trusted.
     STATE_CORRUPTED      = 3
 
-    def __init__(self, filename = None):
+    def __init__(self, filename = None, append = False):
         self.stream_signature_key_public = None
         self.stream_signature_key_private = None
         self.stream_content_key_public = None
@@ -76,7 +76,7 @@ class Stream(object):
         self.last_block_hash = None
 
         if filename:
-            self.open(filename)
+            self.open(filename, append)
 
 
     def __enter__(self):
@@ -132,6 +132,7 @@ class Stream(object):
             you intend to append more blocks. At minimum, a public key for verifying
             the stream is required.
         '''
+
         if public_key_filename:
             public_key = self._load_public_key(public_key_filename)
         else:
@@ -142,8 +143,14 @@ class Stream(object):
         else:
             private_key = None
 
+        if self.stream_signature_key_public and \
+           self._serialize_public_key(public_key) != self._serialize_public_key(self.stream_signature_key_public):
+            raise InvalidKeyPair
+
         if public_key and private_key:
             self._validate_key_pair(private_key, public_key)
+            if self.current_state == self.STATE_VERIFIED:
+                self.current_state = self.STATE_WRITE_VERIFIED
 
         self.stream_signature_key_public = public_key
         self.stream_signature_key_private = private_key
@@ -167,6 +174,9 @@ class Stream(object):
             private_key = self._load_private_key(private_key_filename)
         else:
             private_key = None
+
+        if public_key._serialize_public_key() != self.stream_signature_public_key._serialize_public_key():
+            raise InvalidKeyPair("Public key does not match key found in stream.")
 
         if public_key and private_key:
             self._validate_key_pair(self.stream_signature_key_private, self.stream_signature_key_public)
@@ -202,74 +212,6 @@ class Stream(object):
             raise InvalidKeyPair
 
 
-    def create_with_handle(self, fhandle, manifest_metadata):
-        '''
-            Open a new stream, based on the file-like handle. The stream must be empty.
-        '''
-
-        if not manifest_metadata:
-            raise ValueError("Missing manifest_metadata")
-
-        self.fhandle = fhandle
-        self.fhandle.seek(0, 2)
-        if self.fhandle.tell() != 0:
-            raise ValueError("Stream file not empty.")
-
-        if not self.stream_signature_key_public: 
-            raise MissingKey("Public stream key is missing.")
-
-        if not self.stream_signature_key_private: 
-            raise MissingKey("Private stream key is missing.")
-
-        manifest_metadata[MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY] = self._serialize_public_key(self.stream_signature_key_public) 
-        self.last_block_hash = sha256()
-
-        self.current_state = self.STATE_WRITE_VERIFIED
-        self.append(bytes(), metadata=manifest_metadata)
-
-
-    def create(self, filename, manifest_metadata, force=False):
-        '''
-            Open a new file based stream. The stream must not exist. Most of the 
-            opening work is actually done by open_with_handle()
-        '''
-
-        if not force and os.path.exists(filename):
-            raise IOError("File exists")
-
-        self.create_with_handle(open(filename, "wb"), manifest_metadata)
-
-
-    def open(self, filename):
-        '''
-            Open a stream using a filename
-        '''
-
-        fhandle = open(filename, "rb")
-        return self.open_with_handle(fhandle)
-
-
-    def open_with_handle(self, fhandle):
-        ''' 
-            Open a file given a file-like object
-        '''
-
-        self.fhandle = fhandle
-        self._seek_to_beginning()
-        self.current_state = self.STATE_UNVERIFIED
-        (metadata, _) = self.read_block(0)
-
-
-    def close(self, close_handle=True):
-        '''
-            Close the stream, flushing bits as necessary. Close the associated file if close_file is True.
-        '''
-        if close_handle:
-            self.fhandle.close()
-        else:
-            self.fhandle.flush()
-
-        self.fhandle = None
 
 
     def _seek_to_beginning(self):
@@ -278,6 +220,7 @@ class Stream(object):
         '''
         self.current_block = self.current_block_pos = 0
         self.fhandle.seek(0)
+        self.last_block_hash = None
 
 
     def _seek_to_next_block(self):
@@ -304,6 +247,31 @@ class Stream(object):
         while self._seek_to_next_block():
             if self.current_block == index:
                 return
+
+
+    def _sign_block(self, block):
+        signature = self.stream_signature_key_private.sign(
+            block,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH),
+            hashes.SHA256())
+
+        return signature
+
+
+    def _verify_block(self, block, signature):
+        try:
+            signature = self.stream_signature_key_public.verify(
+                signature,
+                block,
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH),
+                hashes.SHA256())
+        except InvalidSignature:
+            self.current_state = self.STATE_CORRUPTED
+            raise BlockSignatureVerifyFailureException
 
 
     def _validate_and_parse_block(self, block):
@@ -348,8 +316,111 @@ class Stream(object):
 
         self._verify_block(block[:(len(block) - self.UINT32_SIZE - signature_len)], signature)
 
-        return (metadata, content)
-   
+        return (metadata, content, sha)
+  
+
+    def create_with_handle(self, fhandle, manifest_metadata):
+        '''
+            Open a new stream, based on the file-like handle. The stream must be empty.
+        '''
+
+        if not manifest_metadata:
+            raise ValueError("Missing manifest_metadata")
+
+        self.fhandle = fhandle
+        self.fhandle.seek(0, 2)
+        if self.fhandle.tell() != 0:
+            raise ValueError("Stream file not empty.")
+
+        if not self.stream_signature_key_public: 
+            raise MissingKey("Public stream key is missing.")
+
+        if not self.stream_signature_key_private: 
+            raise MissingKey("Private stream key is missing.")
+
+        manifest_metadata[MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY] = self._serialize_public_key(self.stream_signature_key_public) 
+        self.last_block_hash = sha256()
+
+        self.current_state = self.STATE_WRITE_VERIFIED
+        self.append(bytes(), metadata=manifest_metadata)
+
+
+    def create(self, filename, manifest_metadata, force=False):
+        '''
+            Open a new file based stream. The stream must not exist. Most of the 
+            opening work is actually done by open_with_handle()
+        '''
+
+        if not force and os.path.exists(filename):
+            raise IOError("File exists")
+
+        self.create_with_handle(open(filename, "wb"), manifest_metadata)
+
+
+    def open(self, filename, append = False):
+        '''
+            Open a stream using a filename
+        '''
+
+        if append:
+            fhandle = open(filename, "a+b")
+        else:
+            fhandle = open(filename, "rb")
+
+        return self.open_with_handle(fhandle)
+
+
+    def open_with_handle(self, fhandle):
+        ''' 
+            Open a file given a file-like object
+        '''
+
+        self.fhandle = fhandle
+        self._seek_to_beginning()
+        self.current_state = self.STATE_UNVERIFIED
+        (metadata, _) = self.read_block(0)
+
+
+    def close(self, close_handle=True):
+        '''
+            Close the stream, flushing bits as necessary. Close the associated file if close_file is True.
+        '''
+        if close_handle:
+            self.fhandle.close()
+        else:
+            self.fhandle.flush()
+
+        self.fhandle = None
+        self.stream_signature_key_public = None
+        self.stream_signature_key_private = None
+        self.stream_content_key_public = None
+        self.stream_content_key_private = None
+        self.current_state = self.STATE_UNVERIFIED
+        self.current_block = -1
+        self.current_block_pos = -1
+        self.last_block_hash = None
+
+
+    def verify(self):
+
+        public_key = None
+
+        self._seek_to_beginning()
+        self.current_state = self.STATE_UNVERIFIED
+        while True:
+            (metadata, content) = self.read_block(self.current_block)
+            if not content and not metadata:
+                break
+
+            if self.current_block == 1:
+                public_key = metadata[MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY]
+
+        self.current_state = self.STATE_VERIFIED
+
+        if public_key and public_key == self._serialize_public_key(self.stream_signature_key_public):
+            if self.stream_signature_key_private:
+                self.current_state = self.STATE_WRITE_VERIFIED
+
 
     def read_block(self, index):
         '''
@@ -359,12 +430,8 @@ class Stream(object):
         if self.current_state == self.STATE_CORRUPTED:
             raise ExceptionCorruptStream("Stream corrupted, refusing to read.")
 
-        print("read block: cur %d want: %d" % (self.current_block, index))
         if self.current_block >= 0 and self.current_block != index:
-            print("Seek to block")
             self._seek_to_block(index)
-        else:
-            print("No Seek")
 
         try:
             block_size_raw = self.fhandle.read(self.UINT64_SIZE)
@@ -391,37 +458,13 @@ class Stream(object):
             self.current_state = self.STATE_CORRUPTED
             raise ExceptionCorruptStream
             
-        metadata, content = self._validate_and_parse_block(block)
+        metadata, content, hash = self._validate_and_parse_block(block)
 
         self.current_block = index + 1
         self.current_block_pos = self.fhandle.tell()
+        self.last_block_hash = hash
 
         return (metadata, content)
-
-
-    def _sign_block(self, block):
-        signature = self.stream_signature_key_private.sign(
-            block,
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH),
-            hashes.SHA256())
-
-        return signature
-
-
-    def _verify_block(self, block, signature):
-        try:
-            signature = self.stream_signature_key_public.verify(
-                signature,
-                block,
-                padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH),
-                hashes.SHA256())
-        except InvalidSignature:
-            self.current_state = self.STATE_CORRUPTED
-            raise BlockSignatureVerifyFailureException
 
 
     def append(self, content = None, metadata = None, public_key=None, private_key=None):
@@ -429,7 +472,7 @@ class Stream(object):
             Append the block to this stream.
         '''
 
-        if self.state != self.STATE_WRITE_VERIFIED:
+        if self.current_state != self.STATE_WRITE_VERIFIED:
             raise InvalidState("Stream not in verified for write state, cannot append.") 
 
         if not self.stream_signature_key_private:
@@ -453,7 +496,7 @@ class Stream(object):
         if self.last_block_hash:
             last_hash = self.last_block_hash
         else:
-            raise ExceptionStreamNotVerified
+            raise InvalidState("last block hash not set, stream not valid.")
 
         block_data = bytes(last_hash.digest())
         block_data += struct.pack("<L", metadata_len)

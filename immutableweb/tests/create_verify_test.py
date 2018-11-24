@@ -5,7 +5,7 @@ from nose.tools import assert_equals
 
 class TestCreateAndVerifyStream:
 
-    def test_create_and_verify(cls):
+    def test_create_and_verify(self):
         private_key, public_key = key.make_key_pair()
         with open("__test-public.pem", "wb") as f:
             f.write(key.get_public_key_pem(public_key))
