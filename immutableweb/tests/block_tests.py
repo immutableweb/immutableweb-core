@@ -58,3 +58,25 @@ class TestStreamBlocks(unittest.TestCase):
         self.assertEquals(s.state, stream.Stream.STATE_WRITE_VERIFIED)
         s.append(b"4")
         s.close()
+
+        s = stream.Stream("__test.im")
+        self.assertEqual(s.verify(), 5)
+        s.close()
+
+
+    def test_stream_append_while_not_at_end(self):
+
+        private_key, public_key = crypto.make_key_pair()
+        with open("__test-public.pem", "wb") as f:
+            f.write(crypto.get_public_key_pem(public_key))
+        with open("__test-private.pem", "wb") as f:
+            f.write(crypto.get_private_key_pem(private_key))
+
+        s = stream.Stream()
+        s.set_stream_signature_keys("__test-public.pem", "__test-private.pem")
+        s.create("__test.im", { "foo" : "bar" }, force=True)
+        s.append(b"1")
+        s.append(b"2")
+        s.read_block(1)
+        s.append(b"3")
+        s.close()

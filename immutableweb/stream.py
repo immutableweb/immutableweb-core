@@ -128,7 +128,7 @@ class Stream(object):
             Reset the current block index/position to he beginning
         '''
         self.current_block = self.current_block_pos = 0
-        self.fhandle.seek(0)
+        self.fhandle.seek(0, 0)
         self.last_block_hash = None
 
 
@@ -139,8 +139,9 @@ class Stream(object):
                 raise StreamCorrupt
 
             self.fhandle.seek(block_size - self.UINT64_SIZE, 1)
-        except IOError:
+        except IOError as err:
             self.current_block = self.current_block_pos = -1
+            self.current_state = self.STATE_CORRUPTED
             return 0
 
         self.current_block_pos = self.fhandle.tell()
@@ -153,8 +154,11 @@ class Stream(object):
         if self.current_block < 0 or index < self.current_block:
             self._seek_to_beginning()
 
-        while self._seek_to_next_block():
+        while self.current_block < index:
             if self.current_block == index:
+                return
+
+            if not self._seek_to_next_block():
                 return
 
 
@@ -242,7 +246,7 @@ class Stream(object):
         if not force and os.path.exists(filename):
             raise IOError("File exists")
 
-        self.create_with_handle(open(filename, "wb"), manifest_metadata)
+        self.create_with_handle(open(filename, "w+b"), manifest_metadata)
 
 
     def open(self, filename, append = False):
@@ -251,7 +255,7 @@ class Stream(object):
         '''
 
         if append:
-            fhandle = open(filename, "a+b")
+            fhandle = open(filename, "r+b")
         else:
             fhandle = open(filename, "rb")
 
@@ -295,11 +299,13 @@ class Stream(object):
 
         self._seek_to_beginning()
         self.current_state = self.STATE_UNVERIFIED
+        count = 0
         while True:
             (metadata, content) = self.read_block(self.current_block)
             if not content and not metadata:
                 break
 
+            count += 1
             if self.current_block == 1:
                 public_key = metadata[MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY]
 
@@ -309,23 +315,29 @@ class Stream(object):
             if self.stream_signature_key_private:
                 self.current_state = self.STATE_WRITE_VERIFIED
 
+        return count
+
 
     def read_block(self, index):
         '''
             Read and return the requested block. 
         '''
 
+        if index < 0:
+            raise ValueError("block index must be 0 or greater.")
+
         if self.current_state == self.STATE_CORRUPTED:
             raise StreamCorrupt("Stream corrupted, refusing to read.")
 
-        if self.current_block >= 0 and self.current_block != index:
+        if self.current_block != index:
+            print("Seek to %d" % index)
             self._seek_to_block(index)
 
         try:
             block_size_raw = self.fhandle.read(self.UINT64_SIZE)
         except IOError as err:
-            self.current_state = STATE_CORRUPTED
-            raise StreamCorrupt(err)
+            self.current_state = self.STATE_CORRUPTED
+            raise exc.StreamCorrupt(err)
 
         num_read = len(block_size_raw)
         if num_read == 0:
@@ -333,18 +345,18 @@ class Stream(object):
 
         if num_read < self.UINT64_SIZE:
             self.current_state = self.STATE_CORRUPTED
-            raise StreamCorrupt
+            raise exc.StreamCorrupt
 
         try:
             block_size = struct.unpack("<Q", block_size_raw)[0]
             if block_size < self.UINT64_SIZE + 1 or block_size > self.MAX_BLOCK_SIZE:
                 self.current_state = self.STATE_CORRUPTED
-                raise StreamCorrupt
+                raise exc.StreamCorrupt
 
             block = self.fhandle.read(block_size - self.UINT64_SIZE);
         except IOError:
             self.current_state = self.STATE_CORRUPTED
-            raise StreamCorrupt
+            raise exc.StreamCorrupt
             
         metadata, content, hash = self._validate_and_parse_block(block)
 
