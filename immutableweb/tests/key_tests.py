@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-import key
-import stream
+from immutableweb import stream
+from immutableweb import key
 from nose.tools import assert_equals
 import unittest
 
@@ -43,5 +43,3 @@ class TestKeys(unittest.TestCase):
 
         s = stream.Stream()
         cls.assertRaises(FileNotFoundError, s.set_stream_signature_keys, "<doesnotexist>", "<neither does this>")
-
-#        s.set_stream_signature_keys("__test-public.pem", "__test-private.pem")

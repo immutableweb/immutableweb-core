@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-import key
-import stream
+from immutableweb import stream
+from immutableweb import key
 from nose.tools import assert_equals
 import unittest
 

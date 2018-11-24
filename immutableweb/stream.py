@@ -225,7 +225,7 @@ class Stream(object):
         self.last_block_hash = sha256()
 
         self.current_state = self.STATE_WRITE_VERIFIED
-        self.append(manifest_metadata, bytes())
+        self.append(bytes(), metadata=manifest_metadata)
 
 
     def create(self, filename, manifest_metadata, force=False):
@@ -255,9 +255,9 @@ class Stream(object):
         '''
 
         self.fhandle = fhandle
-        self.current_block = self.current_block_pos = -1 
-
-        self.read_block(0)
+        self._seek_to_beginning()
+        self.current_state = self.STATE_UNVERIFIED
+        (metadata, _) = self.read_block(0)
 
 
     def close(self, close_handle=True):
@@ -296,6 +296,16 @@ class Stream(object):
 
         return block_size
 
+
+    def _seek_to_block(self, index):
+        if self.current_block < 0 or index < self.current_block:
+            self._seek_to_beginning()
+
+        while self._seek_to_next_block():
+            if self.current_block == index:
+                return
+
+
     def _validate_and_parse_block(self, block):
 
         offset = 0
@@ -332,7 +342,7 @@ class Stream(object):
         if digest != hash:
             raise BlockHashVerifyFailureException
 
-        if self.current_block == -1:
+        if self.current_block == 0:
             self.stream_signature_key_public = self._deserialize_public_key( \
                 bytes(metadata[MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY], "utf-8"))
 
@@ -347,10 +357,14 @@ class Stream(object):
         '''
 
         if self.current_state == self.STATE_CORRUPTED:
-            raise ExceptionCorruptStream("Refusing to read from corrupted stream.")
+            raise ExceptionCorruptStream("Stream corrupted, refusing to read.")
 
+        print("read block: cur %d want: %d" % (self.current_block, index))
         if self.current_block >= 0 and self.current_block != index:
+            print("Seek to block")
             self._seek_to_block(index)
+        else:
+            print("No Seek")
 
         try:
             block_size_raw = self.fhandle.read(self.UINT64_SIZE)
@@ -410,8 +424,7 @@ class Stream(object):
             raise BlockSignatureVerifyFailureException
 
 
-    def append(self, metadata = None, content = None, 
-               public_key=None, private_key=None):
+    def append(self, content = None, metadata = None, public_key=None, private_key=None):
         '''
             Append the block to this stream.
         '''
