@@ -13,7 +13,7 @@ from immutableweb import exception as exc
 @click.argument("base_filename", nargs=1)
 def make_keys(force, base_filename):
 
-    private_key, public_key = crypto.make_key_pair()
+    public_key, private_key = crypto.make_key_pair()
     pem = crypto.get_private_key_pem(private_key)
 
     private_filename = base_filename + "-private.pem"

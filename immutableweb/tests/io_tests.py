@@ -7,28 +7,17 @@ import unittest
 class TestStreamFileIO(unittest.TestCase):
 
     def test_file_existence(self):
-        private_key, public_key = crypto.make_key_pair()
-        with open("__test-public.pem", "wb") as f:
-            f.write(crypto.get_public_key_pem(public_key))
-        with open("__test-private.pem", "wb") as f:
-            f.write(crypto.get_private_key_pem(private_key))
-
         s = stream.Stream()
-        s.set_stream_signature_keys("__test-public.pem", "__test-private.pem")
-        self.assertRaises(IOError, s.create, "__test.im", { 'foo' : "bar" })
+        s.set_stream_signature_keys(crypto.make_key_pair())
+        self.assertRaises(IOError, s.create, "__test.im")
 
 
     def test_file_existence_override(self):
-        private_key, public_key = crypto.make_key_pair()
-        with open("__test-public.pem", "wb") as f:
-            f.write(crypto.get_public_key_pem(public_key))
-        with open("__test-private.pem", "wb") as f:
-            f.write(crypto.get_private_key_pem(private_key))
 
         s = stream.Stream()
-        s.set_stream_signature_keys("__test-public.pem", "__test-private.pem")
+        s.set_stream_signature_keys(crypto.make_key_pair())
         try:
-            s.create("__test.im", { 'foo' : "bar" }, force=True)
+            s.create("__test.im", force=True)
         except IOError as err:
             self.fail("Force overwrite file dowes not throw the expected exception.")
             return

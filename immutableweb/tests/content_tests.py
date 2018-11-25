@@ -6,27 +6,18 @@ from immutableweb import stream
 from immutableweb import crypto
 from immutableweb import exception as exc
 
+# TODO: add metadata tests
 class TestContentEncryption(unittest.TestCase):
 
 
     def test_streamwide_content_keys(self):
-        private_key, public_key = crypto.make_key_pair()
-        with open("__test-public.pem", "wb") as f:
-            f.write(crypto.get_public_key_pem(public_key))
-        with open("__test-private.pem", "wb") as f:
-            f.write(crypto.get_private_key_pem(private_key))
-
-        private_key2, public_key2 = crypto.make_key_pair()
-        with open("__test2-public.pem", "wb") as f:
-            f.write(crypto.get_public_key_pem(public_key2))
-        with open("__test2-private.pem", "wb") as f:
-            f.write(crypto.get_private_key_pem(private_key2))
+        public_key, private_key = crypto.make_key_pair()
+        public_key2, private_key2 = crypto.make_key_pair()
 
         s = stream.Stream()
-        s.set_stream_signature_keys("__test-public.pem", "__test-private.pem")
-        s.set_stream_content_keys("__test2-public.pem", "__test2-private.pem")
-        # TODO: add metadata tests
-        s.create("__test.im", { "foo" : "bar" }, force=True)
+        s.set_stream_signature_keys(public_key, private_key)
+        s.set_stream_content_keys(public_key2, private_key2)
+        s.create("__test.im", force=True)
         s.append(b"1")
         s.append(b"2")
         s.append(b"3")
@@ -40,28 +31,19 @@ class TestContentEncryption(unittest.TestCase):
             self.assertEqual(crypto.decrypt(private_key2, block), b"1")
 
         with stream.Stream("__test.im") as s:
-            s.set_stream_content_keys("__test2-public.pem", "__test2-private.pem")
+            s.set_stream_content_keys(public_key2, private_key2)
             s.verify()
             _, block = s.read(1) 
             print(block)
             self.assertEqual(block, b"1")
 
+
     def test_block_content_keys(self):
-        private_key, public_key = crypto.make_key_pair()
-        with open("__test-public.pem", "wb") as f:
-            f.write(crypto.get_public_key_pem(public_key))
-        with open("__test-private.pem", "wb") as f:
-            f.write(crypto.get_private_key_pem(private_key))
-
-        private_key2, public_key2 = crypto.make_key_pair()
-        with open("__test2-public.pem", "wb") as f:
-            f.write(crypto.get_public_key_pem(public_key2))
-        with open("__test2-private.pem", "wb") as f:
-            f.write(crypto.get_private_key_pem(private_key2))
-
         s = stream.Stream()
-        s.set_stream_signature_keys("__test-public.pem", "__test-private.pem")
-        s.create("__test.im", { "foo" : "bar" }, force=True)
+        public_key, private_key = crypto.make_key_pair()
+        public_key2, private_key2 = crypto.make_key_pair()
+        s.set_stream_signature_keys(public_key, private_key)
+        s.create("__test.im", force=True)
         s.append(b"1")
         s.append(b"2", public_key=public_key2)
         s.append(b"3")

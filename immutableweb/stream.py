@@ -66,30 +66,57 @@ class Stream(object):
         return self.current_state
 
 
-    def set_stream_signature_keys(self, public_key_filename, private_key_filename = None):
+    def set_stream_signature_keys(self, public_key, private_key = None):
         '''
             Set the public key for verifying data in the stream. Optionally, 
-            set the private key for appending new data to the stream. Only needed if
-            you intend to append more blocks. At minimum, a public key for verifying
-            the stream is required.
+            set the private key for appending new data to the stream, which is only needed if
+            you intend to append more blocks. At least a public_key is required.
         '''
 
-        if public_key_filename:
-            public_key = crypto.load_public_key(public_key_filename)
-        else:
-            public_key = None
+        if isinstance(public_key, tuple):
+            private_key = public_key[1]
+            public_key = public_key[0]
 
-        if private_key_filename:
-            private_key = crypto.load_private_key(private_key_filename)
-        else:
-            private_key = None
+        print(public_key)
+        print(private_key)
+        
+        if not public_key:
+            raise exc.MissingKey("Public key is missing.")
 
         if self.stream_signature_key_public and \
            crypto.serialize_public_key(public_key) != crypto.serialize_public_key(self.stream_signature_key_public):
             raise exc.InvalidKeyPair
 
         if public_key and private_key:
-            crypto.validate_key_pair(private_key, public_key)
+            crypto.validate_key_pair(public_key, private_key)
+            if self.current_state == self.STATE_VERIFIED:
+                self.current_state = self.STATE_WRITE_VERIFIED
+
+        print("set both keys", public_key, private_key)
+        self.stream_signature_key_public = public_key
+        self.stream_signature_key_private = private_key
+        
+
+    def set_stream_signature_keys_filename(self, public_key_filename, private_key_filename = None):
+        '''
+            Read the public key for verifying data in the stream from a given filename. Optionally, 
+            set the private key filename for appending new data to the stream, which is only needed if
+            you intend to append more blocks. At least a public_key is required.
+        '''
+
+        if not public_key_filename:
+            raise exc.MissingKey("Public key filename is missing.")
+
+        public_key = crypto.load_public_key(public_key_filename)
+        if private_key_filename:
+            private_key = crypto.load_private_key(private_key_filename)
+
+        if self.stream_signature_key_public and \
+           crypto.serialize_public_key(public_key) != crypto.serialize_public_key(self.stream_signature_key_public):
+            raise exc.InvalidKeyPair
+
+        if public_key and private_key:
+            crypto.validate_key_pair(public_key, private_key)
             if self.current_state == self.STATE_VERIFIED:
                 self.current_state = self.STATE_WRITE_VERIFIED
 
@@ -97,8 +124,7 @@ class Stream(object):
         self.stream_signature_key_private = private_key
 
 
-    # TODO: Implement block specific keys
-    def set_stream_content_keys(self, public_key_filename, private_key_filename = None):
+    def set_stream_content_keys(self, public_key, private_key = None):
         ''' 
             Set the encyption keys to be used by the whole stream. If the caller plans to 
             append to the stream, a private key needs to be provided as well. If no keys are
@@ -106,6 +132,24 @@ class Stream(object):
             keys are provided on a per-block basis. Per block basis encrption keys override
             stream level encryption keys.
         '''
+
+        if isinstance(public_key, tuple):
+            private_key = public_key[1]
+            public_key = public_key[0]
+
+        if public_key and private_key:
+            crypto.validate_key_pair(public_key, private_key)
+
+        self.stream_content_key_public = public_key
+        self.stream_content_key_private = private_key
+
+
+    def set_stream_content_keys_filename(self, public_key_filename, private_key_filename = None):
+        ''' 
+            Set the encyption keys to be used by the whole stream, reading the keys from disk.
+            Please see the comments gor set_stream_content_keys for details on this function.
+        '''
+
         if public_key_filename:
             public_key = crypto.load_public_key(public_key_filename)
         else:
@@ -118,7 +162,7 @@ class Stream(object):
 
 
         if public_key and private_key:
-            crypto.validate_key_pair(private_key, public_key)
+            crypto.validate_key_pair(public_key, private_key)
 
         self.stream_content_key_public = public_key
         self.stream_content_key_private = private_key
@@ -222,12 +266,12 @@ class Stream(object):
         return (metadata, content, sha)
   
 
-    def create_with_handle(self, fhandle, manifest_metadata):
+    def create_with_handle(self, fhandle, manifest_metadata = {}):
         '''
             Open a new stream, based on the file-like handle. The stream must be empty.
         '''
 
-        if not manifest_metadata:
+        if manifest_metadata == None or not isinstance(manifest_metadata,dict):
             raise ValueError("Missing manifest_metadata")
 
         self.fhandle = fhandle
@@ -250,7 +294,7 @@ class Stream(object):
         self.append(bytes(), metadata=manifest_metadata)
 
 
-    def create(self, filename, manifest_metadata, force=False):
+    def create(self, filename, manifest_metadata = {}, force=False):
         '''
             Open a new file based stream. The stream must not exist. Most of the 
             opening work is actually done by open_with_handle()

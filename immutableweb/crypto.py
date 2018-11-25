@@ -26,7 +26,7 @@ def make_key_pair():
 
     public_key = private_key.public_key()
 
-    return (private_key, public_key)
+    return (public_key, private_key)
 
 
 def get_private_key_pem(private_key):
@@ -116,7 +116,7 @@ def deserialize_public_key(pem):
     return public_key
 
 
-def validate_key_pair(private_key, public_key):
+def validate_key_pair(public_key, private_key):
     '''
         Does a round-trip encryption in order to ensure that the provided
         keys actually work as expected. Throws Missing Key or exc.InvalidKeyPair

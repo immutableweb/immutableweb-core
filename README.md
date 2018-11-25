@@ -5,11 +5,13 @@ Currently there is no code written for this project yet -- I'm looking for feedb
 
 If you think the Immutable Web is viable and you have identified a problem or have a suggestion that improves the concept, please create an issue for this project.
 
-== Using Keybase keys ==
+== Creating your first stream ==
 
-Import your public key into GPG:
-curl https://keybase.io/<user>/pgp_keys.asc | gpg --import
+from immutableweb import stream
+from immutableweb import crypto
 
-Export your keybase key from the web site into a file, and:
-gpg --allow-secret-key-import --import <file>
-
+s = stream.Stream()
+s.set_stream_signature_keys(crypto.make_key_pair())
+s.create("test.im")
+s.append(content=b"Block content!")
+s.close()
