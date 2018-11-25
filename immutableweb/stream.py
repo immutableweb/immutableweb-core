@@ -60,6 +60,9 @@ class Stream(object):
 
     @property
     def state(self):
+        '''
+            Return the state of the current stream. Return one of the STATE_* values from above.
+        '''
         return self.current_state
 
 
@@ -94,7 +97,7 @@ class Stream(object):
         self.stream_signature_key_private = private_key
 
 
-    # TODO: Implement stream wide keys
+    # TODO: Implement block specific keys
     def set_stream_content_keys(self, public_key_filename, private_key_filename = None):
         ''' 
             Set the encyption keys to be used by the whole stream. If the caller plans to 
@@ -131,6 +134,10 @@ class Stream(object):
 
 
     def _seek_to_next_block(self):
+        '''
+            Seek to the next block from the current position.
+        '''
+
         try:
             block_size = struct.unpack("<Q", self.fhandle.read(self.UINT64_SIZE))[0]
             if block_size < self.UINT64_SIZE + 1 or block_size > self.MAX_BLOCK_SIZE:
@@ -149,6 +156,9 @@ class Stream(object):
 
 
     def _seek_to_block(self, index):
+        '''
+            Seek to a given block number.
+        '''
         if self.current_block < 0 or index < self.current_block:
             self._seek_to_beginning()
 
@@ -161,6 +171,9 @@ class Stream(object):
 
 
     def _validate_and_parse_block(self, block):
+        '''
+            Parse, hash check and signature check a given block loaded off disk.
+        '''
 
         offset = 0
 
@@ -251,7 +264,7 @@ class Stream(object):
 
     def open(self, filename, append = False):
         '''
-            Open a stream using a filename
+            Open a stream using a filename. To open in append mode, pass append=True .
         '''
 
         if append:
@@ -264,7 +277,7 @@ class Stream(object):
 
     def open_with_handle(self, fhandle):
         ''' 
-            Open a file given a file-like object
+            Open a file given a file-like object.
         '''
 
         self.fhandle = fhandle
@@ -294,6 +307,10 @@ class Stream(object):
 
 
     def verify(self):
+        '''
+            Seek to the beginning of the file and verify all of it. When done, set the internal stream state.
+            Return the number of block verified.
+        '''
 
         public_key = None
 
@@ -320,7 +337,8 @@ class Stream(object):
 
     def read_block(self, index):
         '''
-            Read and return the requested block. 
+            Read and return the requested block. Return a tuple of (metadata, block). The
+            block will be hash verified and signature verified when returned.
         '''
 
         if index < 0:
@@ -371,7 +389,7 @@ class Stream(object):
 
     def append(self, content = None, metadata = None, public_key=None, private_key=None):
         '''
-            Append the block to this stream.
+            Append the block to this stream. Stream must be in write verified state.
         '''
 
         if self.current_state != self.STATE_WRITE_VERIFIED:
