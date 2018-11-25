@@ -69,3 +69,27 @@ class TestKeys(unittest.TestCase):
 
         s = stream.Stream()
         s.set_stream_content_keys_filename("__test-public.pem", "__test-private.pem")
+
+
+    def test_metadata(self):
+
+        metadata = { 'foo' : 'bar' }
+        metadata2 = { 'foo' : 'bar' }
+
+        s = stream.Stream()
+        s.set_stream_signature_keys(crypto.make_key_pair())
+        s.create("__test.im", metadata, force=True)
+        s.append(b"1")
+        s.append(b"2", metadata2)
+        s.append(b"3")
+        s.close()
+
+        s = stream.Stream("__test.im", append=True)
+        s.verify()
+        (read_metadata, content) = s.read(0)
+        self.assertEqual(read_metadata, metadata)
+        (read_metadata, content) = s.read(2)
+        self.assertEqual(read_metadata, metadata2)
+        s.close()
+
+

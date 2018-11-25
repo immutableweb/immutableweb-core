@@ -6,7 +6,6 @@ from immutableweb import stream
 from immutableweb import crypto
 from immutableweb import exception as exc
 
-# TODO: add metadata tests
 class TestContentEncryption(unittest.TestCase):
 
 
