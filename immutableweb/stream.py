@@ -113,11 +113,9 @@ class Stream(object):
         else:
             private_key = None
 
-        if crypto.serialize_public_key() != crypto.serialize_public_key(self.stream_signature_public_key):
-            raise exc.InvalidKeyPair("Public key does not match key found in stream.")
 
         if public_key and private_key:
-            crypto.validate_key_pair(self.stream_signature_key_private, self.stream_signature_key_public)
+            crypto.validate_key_pair(private_key, public_key)
 
         self.stream_content_key_public = public_key
         self.stream_content_key_private = private_key
@@ -223,6 +221,8 @@ class Stream(object):
         self.fhandle.seek(0, 2)
         if self.fhandle.tell() != 0:
             raise ValueError("Stream file not empty.")
+
+        self._seek_to_beginning()
 
         if not self.stream_signature_key_public: 
             raise exc.MissingKey("Public stream key is missing.")
@@ -330,7 +330,6 @@ class Stream(object):
             raise StreamCorrupt("Stream corrupted, refusing to read.")
 
         if self.current_block != index:
-            print("Seek to %d" % index)
             self._seek_to_block(index)
 
         try:
@@ -360,6 +359,9 @@ class Stream(object):
             
         metadata, content, hash = self._validate_and_parse_block(block)
 
+        if self.current_block > 0 and self.stream_content_key_public and self.stream_content_key_private:
+            content = crypto.decrypt(self.stream_content_key_private, content)
+
         self.current_block = index + 1
         self.current_block_pos = self.fhandle.tell()
         self.last_block_hash = hash
@@ -386,6 +388,9 @@ class Stream(object):
 
         if self.current_block < 0 and not metadata:
             raise ValueError("Metadata for block 0 (aka the manifest block) must be given.")
+
+        if self.current_block > 0 and self.stream_content_key_public and self.stream_content_key_private:
+            content = crypto.encrypt(self.stream_content_key_public, content)
 
         metadata = bytes(ujson.dumps(metadata), 'utf-8')
         metadata_len = len(metadata)

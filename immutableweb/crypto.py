@@ -118,3 +118,21 @@ def verify(public_key, block, signature):
             hashes.SHA256())
     except InvalidSignature:
         raise exc.BlockSignatureVerifyFailureException
+
+# TODO do parameter validation
+def encrypt(public_key, block):
+    return public_key.encrypt(
+        block,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None))
+
+
+def decrypt(private_key, block):
+    return private_key.decrypt(
+        block,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None))
