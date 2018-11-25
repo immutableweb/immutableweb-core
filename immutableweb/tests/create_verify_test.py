@@ -20,15 +20,15 @@ class TestCreateAndVerifyStream:
             s.append(content=b)
         s.close()
 
-        read_blocks = []
+        reads = []
         with stream.Stream("__test.im") as s:
             block_index = 1
             while True:
-                metadata, content = s.read_block(block_index)
+                metadata, content = s.read(block_index)
                 if not content:
                     break
 
-                read_blocks.append(content)
+                reads.append(content)
                 block_index += 1
 
-        assert_equals(blocks, read_blocks)
+        assert_equals(blocks, reads)

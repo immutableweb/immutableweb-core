@@ -283,7 +283,7 @@ class Stream(object):
         self.fhandle = fhandle
         self._seek_to_beginning()
         self.current_state = self.STATE_UNVERIFIED
-        (metadata, _) = self.read_block(0)
+        (metadata, _) = self.read(0)
 
 
     def close(self, close_handle=True):
@@ -318,7 +318,7 @@ class Stream(object):
         self.current_state = self.STATE_UNVERIFIED
         count = 0
         while True:
-            (metadata, content) = self.read_block(self.current_block)
+            (metadata, content) = self.read(self.current_block)
             if not content and not metadata:
                 break
 
@@ -335,11 +335,17 @@ class Stream(object):
         return count
 
 
-    def read_block(self, index):
+    def read(self, index, private_key = None, **kwargs):
         '''
             Read and return the requested block. Return a tuple of (metadata, block). The
-            block will be hash verified and signature verified when returned.
+            block will be hash verified and signature verified when returned. If a private_key is provided,
+            the block will be decrypted for being returned -- the private key passed here supercedes the 
+            stream wide encryption keys
         '''
+
+        for arg in kwargs:
+            if arg not in ['index', 'private_key']:
+                raise ValueError("Extraneous argument to read(): %s" % arg)
 
         if index < 0:
             raise ValueError("block index must be 0 or greater.")
@@ -377,8 +383,12 @@ class Stream(object):
             
         metadata, content, hash = self._validate_and_parse_block(block)
 
-        if self.current_block > 0 and self.stream_content_key_public and self.stream_content_key_private:
-            content = crypto.decrypt(self.stream_content_key_private, content)
+        if self.current_block > 0:
+            if private_key:
+                content = crypto.decrypt(private_key, content)
+            else:
+                if self.stream_content_key_public and self.stream_content_key_private:
+                    content = crypto.decrypt(self.stream_content_key_private, content)
 
         self.current_block = index + 1
         self.current_block_pos = self.fhandle.tell()
@@ -387,10 +397,15 @@ class Stream(object):
         return (metadata, content)
 
 
-    def append(self, content = None, metadata = None, public_key=None, private_key=None):
+    def append(self, content = None, metadata = None, public_key=None, **kwargs):
         '''
-            Append the block to this stream. Stream must be in write verified state.
+            Append the block to this stream. Stream must be in write verified state. If a public_key
+            argument is provided it will be used to encrypt the block before writing -- it supercedes the stream wide encryption keys.
         '''
+
+        for arg in kwargs:
+            if arg not in ['content', 'metadata', 'public_key']:
+                raise ValueError("Extraneous argument to append(): %s" % arg)
 
         if self.current_state != self.STATE_WRITE_VERIFIED:
             raise exc.InvalidState("Stream not in verified for write state, cannot append.") 
@@ -407,8 +422,12 @@ class Stream(object):
         if self.current_block < 0 and not metadata:
             raise ValueError("Metadata for block 0 (aka the manifest block) must be given.")
 
-        if self.current_block > 0 and self.stream_content_key_public and self.stream_content_key_private:
-            content = crypto.encrypt(self.stream_content_key_public, content)
+        if self.current_block > 0:
+            if public_key:
+                content = crypto.encrypt(public_key, content)
+            else:
+                if self.stream_content_key_public and self.stream_content_key_private:
+                    content = crypto.encrypt(self.stream_content_key_public, content)
 
         metadata = bytes(ujson.dumps(metadata), 'utf-8')
         metadata_len = len(metadata)

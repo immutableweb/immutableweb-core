@@ -22,11 +22,11 @@ class TestStreamBlocks(unittest.TestCase):
         s.close()
 
         s = stream.Stream("__test.im")
-        self.assertEqual(s.read_block(1)[1], b"1")
-        self.assertEqual(s.read_block(2)[1], b"2")
-        self.assertEqual(s.read_block(3)[1], b"3")
-        self.assertEqual(s.read_block(2)[1], b"2")
-        self.assertEqual(s.read_block(3)[1], b"3")
+        self.assertEqual(s.read(1)[1], b"1")
+        self.assertEqual(s.read(2)[1], b"2")
+        self.assertEqual(s.read(3)[1], b"3")
+        self.assertEqual(s.read(2)[1], b"2")
+        self.assertEqual(s.read(3)[1], b"3")
         s.close()
 
 
@@ -77,6 +77,6 @@ class TestStreamBlocks(unittest.TestCase):
         s.create("__test.im", { "foo" : "bar" }, force=True)
         s.append(b"1")
         s.append(b"2")
-        s.read_block(1)
+        s.read(1)
         s.append(b"3")
         s.close()
