@@ -16,6 +16,9 @@ from immutableweb import exception as exc
 KEY_VERIFICATION_TEST_MESSAGE = "stop tectonic drift!"
 
 def make_key_pair():
+    '''
+        This function generates a new set of RSA crypto keys. Returns private and public keys in a tuple.
+    '''
     private_key = rsa.generate_private_key(
          public_exponent=65537,
          key_size=2048,
@@ -27,9 +30,12 @@ def make_key_pair():
 
 
 def get_private_key_pem(private_key):
+    '''
+        Generate an ASCII pem string from a private key.
+    '''
 
     if not private_key:
-        raise MissingKey
+        raise exc.missingKey
 
     return private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
@@ -37,9 +43,12 @@ def get_private_key_pem(private_key):
         encryption_algorithm=serialization.NoEncryption())
 
 def get_public_key_pem(public_key):
+    '''
+        Generate an ASCII pem string from a public key.
+    '''
 
     if not public_key:
-        raise MissingKey
+        raise exc.missingKey
 
     return public_key.public_bytes(
        encoding=serialization.Encoding.PEM,
@@ -47,6 +56,9 @@ def get_public_key_pem(public_key):
 
 
 def load_private_key(filename):
+    '''
+        Load a private key off disk, given a filename that contains a private key.
+    '''
 
     if not filename:
         raise ValueError("Must provide private key file.")
@@ -60,6 +72,9 @@ def load_private_key(filename):
 
 
 def load_public_key(filename):
+    '''
+        Load a public key off disk, given a filename that contains a public key.
+    '''
 
     if not filename:
         raise ValueError("Must provide public key file.")
@@ -72,9 +87,12 @@ def load_public_key(filename):
 
 
 def serialize_public_key(key):
+    '''
+        Serialize public key to ASCII.
+    '''
 
     if not key:
-        raise MissingKey
+        raise exc.missingKey
 
     pem = key.public_bytes(
         encoding=serialization.Encoding.PEM,
@@ -84,9 +102,12 @@ def serialize_public_key(key):
 
 
 def deserialize_public_key(pem):
+    '''
+        Deserialize public key from ASCII.
+    '''
 
     if not pem:
-        raise MissingKey("Missing pem data")
+        raise exc.missingKey("Missing pem data")
 
     public_key = serialization.load_pem_public_key(
         pem,
@@ -98,11 +119,11 @@ def deserialize_public_key(pem):
 def validate_key_pair(private_key, public_key):
     '''
         Does a round-trip encryption in order to ensure that the provided
-        keys actually work as expected.
+        keys actually work as expected. Throws Missing Key or exc.InvalidKeyPair
     '''
 
     if not private_key or not public_key:
-        raise MissingKey("Both private and public key must be provided.")
+        raise esc.MissingKey("Both private and public key must be provided.")
 
     msg = bytes(KEY_VERIFICATION_TEST_MESSAGE, 'utf-8')
     try:
@@ -126,9 +147,12 @@ def validate_key_pair(private_key, public_key):
 
 
 def sign(private_key, block):
+    '''
+        Sign the given block with the given private key.
+    '''
 
     if not private_key:
-        raise MissingKey("Missing private key")
+        raise exc.missingKey("Missing private key")
 
     return private_key.sign(
         block,
@@ -139,9 +163,12 @@ def sign(private_key, block):
 
 
 def verify(public_key, block, signature):
+    '''
+        Verify the given block with the given public key.
+    '''
 
     if not public_key:
-        raise MissingKey("Missing public key")
+        raise exc.missingKey("Missing public key")
 
     try:
         signature = public_key.verify(
@@ -156,9 +183,12 @@ def verify(public_key, block, signature):
 
 
 def encrypt(public_key, block):
+    '''
+        Encrypt the given block with the given public key. Return encrypted block.
+    '''
 
     if not public_key:
-        raise MissingKey("Missing public key")
+        raise exc.missingKey("Missing public key")
 
     return public_key.encrypt(
         block,
@@ -169,9 +199,12 @@ def encrypt(public_key, block):
 
 
 def decrypt(private_key, block):
+    '''
+        Decrypt the given block with the given private key. Return decrypted block.
+    '''
 
     if not private_key:
-        raise MissingKey("Missing private key")
+        raise exc.missingKey("Missing private key")
 
     return private_key.decrypt(
         block,
