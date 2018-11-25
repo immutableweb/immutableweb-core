@@ -27,18 +27,30 @@ def make_key_pair():
 
 
 def get_private_key_pem(private_key):
+
+    if not private_key:
+        raise MissingKey
+
     return private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption())
 
 def get_public_key_pem(public_key):
+
+    if not public_key:
+        raise MissingKey
+
     return public_key.public_bytes(
        encoding=serialization.Encoding.PEM,
        format=serialization.PublicFormat.SubjectPublicKeyInfo)
 
 
 def load_private_key(filename):
+
+    if not filename:
+        raise ValueError("Must provide private key file.")
+
     with open(filename, "rb") as key_file:
          private_key = serialization.load_pem_private_key(
              key_file.read(),
@@ -48,6 +60,10 @@ def load_private_key(filename):
 
 
 def load_public_key(filename):
+
+    if not filename:
+        raise ValueError("Must provide public key file.")
+
     with open(filename, "rb") as key_file:
          public_key = serialization.load_pem_public_key(
              key_file.read(),
@@ -56,6 +72,10 @@ def load_public_key(filename):
 
 
 def serialize_public_key(key):
+
+    if not key:
+        raise MissingKey
+
     pem = key.public_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo)
@@ -64,6 +84,10 @@ def serialize_public_key(key):
 
 
 def deserialize_public_key(pem):
+
+    if not pem:
+        raise MissingKey("Missing pem data")
+
     public_key = serialization.load_pem_public_key(
         pem,
         backend=default_backend())
@@ -76,6 +100,9 @@ def validate_key_pair(private_key, public_key):
         Does a round-trip encryption in order to ensure that the provided
         keys actually work as expected.
     '''
+
+    if not private_key or not public_key:
+        raise MissingKey("Both private and public key must be provided.")
 
     msg = bytes(KEY_VERIFICATION_TEST_MESSAGE, 'utf-8')
     try:
@@ -99,6 +126,10 @@ def validate_key_pair(private_key, public_key):
 
 
 def sign(private_key, block):
+
+    if not private_key:
+        raise MissingKey("Missing private key")
+
     return private_key.sign(
         block,
         padding.PSS(
@@ -108,6 +139,10 @@ def sign(private_key, block):
 
 
 def verify(public_key, block, signature):
+
+    if not public_key:
+        raise MissingKey("Missing public key")
+
     try:
         signature = public_key.verify(
             signature,
@@ -119,8 +154,12 @@ def verify(public_key, block, signature):
     except InvalidSignature:
         raise exc.BlockSignatureVerifyFailureException
 
-# TODO do parameter validation
+
 def encrypt(public_key, block):
+
+    if not public_key:
+        raise MissingKey("Missing public key")
+
     return public_key.encrypt(
         block,
         padding.OAEP(
@@ -130,6 +169,10 @@ def encrypt(public_key, block):
 
 
 def decrypt(private_key, block):
+
+    if not private_key:
+        raise MissingKey("Missing private key")
+
     return private_key.decrypt(
         block,
         padding.OAEP(
