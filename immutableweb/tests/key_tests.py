@@ -10,7 +10,7 @@ class TestKeys(unittest.TestCase):
 
     def test_missing_keys(self):
         s = stream.Stream()
-        self.assertRaises(exc.MissingKey, s.create, "__test.im", force=True)
+        self.assertRaises(exc.MissingKey, s.create, "__test.iw", force=True)
 
 
     def test_mismatched_keys(self):
@@ -31,13 +31,13 @@ class TestKeys(unittest.TestCase):
         public_key, private_key = crypto.make_key_pair()
         public_key2, private_key2 = crypto.make_key_pair()
         s.set_stream_signature_keys(public_key, private_key)
-        s.create("__test.im", force=True)
+        s.create("__test.iw", force=True)
         s.append(b"1")
         s.append(b"2")
         s.append(b"3")
         s.close()
 
-        s = stream.Stream("__test.im", append=True)
+        s = stream.Stream("__test.iw", append=True)
         try:
             s.verify()
             self.assertEquals(s.state, stream.Stream.STATE_VERIFIED)
@@ -78,13 +78,13 @@ class TestKeys(unittest.TestCase):
 
         s = stream.Stream()
         s.set_stream_signature_keys(crypto.make_key_pair())
-        s.create("__test.im", metadata, force=True)
+        s.create("__test.iw", metadata, force=True)
         s.append(b"1")
         s.append(b"2", metadata2)
         s.append(b"3")
         s.close()
 
-        s = stream.Stream("__test.im", append=True)
+        s = stream.Stream("__test.iw", append=True)
         s.verify()
         (read_metadata, content) = s.read(0)
         self.assertEqual(read_metadata, metadata)

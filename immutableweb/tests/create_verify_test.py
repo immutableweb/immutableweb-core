@@ -9,13 +9,13 @@ class TestCreateAndVerifyStream:
         blocks = [b"random", b"crap"]
         s = stream.Stream()
         s.set_stream_signature_keys(crypto.make_key_pair())
-        s.create("__test.im", force=True)
+        s.create("__test.iw", force=True)
         for b in blocks:
             s.append(content=b)
         s.close()
 
         reads = []
-        with stream.Stream("__test.im") as s:
+        with stream.Stream("__test.iw") as s:
             block_index = 1
             while True:
                 metadata, content = s.read(block_index)

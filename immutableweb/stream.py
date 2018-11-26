@@ -325,7 +325,14 @@ class Stream(object):
         '''
 
         self.fhandle = fhandle
+
+        self.fhandle.seek(self.UINT64_SIZE)
+        prev_hash = self.fhandle.read(self.HASH_SIZE)
+        if sha256().digest() != prev_hash:
+            raise ValueError("The given file is not an Immutable Web file.")
+
         self._seek_to_beginning()
+
         self.current_state = self.STATE_UNVERIFIED
         (metadata, _) = self.read(0)
 
