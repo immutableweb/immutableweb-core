@@ -24,12 +24,8 @@ s.close()
 
 ```
 from immutableweb import stream
-from immutableweb import crypto
 
-s = stream.Stream()
-s.open("test.im")
-for i in range(1, s.verify()):
-    print(i)
-    print(s.read(i))  
-s.close()
+with stream.Stream("test.im") as s:
+    for i in range(1, s.verify()):
+        print(s.read(i))  
 ```
