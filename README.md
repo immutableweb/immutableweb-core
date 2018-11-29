@@ -10,8 +10,8 @@ If you think the Immutable Web is viable and you have identified a problem or ha
 from immutableweb import stream
 from immutableweb import crypto
 
-s = stream.Stream()
-s.set_stream_signature_keys(crypto.make_key_pair())
-s.create("test.im")
-s.append(content=b"Block content!")
-s.close()
+ s = stream.Stream()
+ s.set_stream_signature_keys(crypto.make_key_pair())
+ s.create("test.im")
+ s.append(content=b"Block content!")
+ s.close()
