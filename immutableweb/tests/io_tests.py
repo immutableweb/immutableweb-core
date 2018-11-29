@@ -1,15 +1,29 @@
 #!/usr/bin/env python3
-from immutableweb import stream
-from immutableweb import crypto
+import os
 from nose.tools import assert_equals
 import unittest
+from tempfile import NamedTemporaryFile
+from immutableweb import stream
+from immutableweb import crypto
 
 class TestStreamFileIO(unittest.TestCase):
+
+    def setUp(self):
+        self.filehandle = NamedTemporaryFile(delete=False)
+
+
+    def tearDown(self):
+        self.filehandle.close()
+        try:
+            os.unlink(self.filehandle.name)
+        except IOError:
+            pass
+
 
     def test_file_existence(self):
         s = stream.Stream()
         s.set_stream_signature_keys(crypto.make_key_pair())
-        self.assertRaises(IOError, s.create, "__test.iw")
+        self.assertRaises(IOError, s.create, self.filehandle.name)
 
 
     def test_file_existence_override(self):
@@ -17,9 +31,9 @@ class TestStreamFileIO(unittest.TestCase):
         s = stream.Stream()
         s.set_stream_signature_keys(crypto.make_key_pair())
         try:
-            s.create("__test.iw", force=True)
+            s.create(self.filehandle.name, force=True)
         except IOError as err:
-            self.fail("Force overwrite file dowes not throw the expected exception.")
+            self.fail("Force overwrite file does not throw the expected exception.")
             return
 
 
@@ -29,8 +43,8 @@ class TestStreamFileIO(unittest.TestCase):
 
 
     def test_not_iw_stream(self):
-        with open("not-iw.iw", "wb") as f:
-            f.write(b"\0" * 1024)
+        self.filehandle.write(b"\0" * 1024)
+        self.filehandle.close()
 
         s = stream.Stream()
-        self.assertRaises(ValueError, s.open, "not-iw.iw")
+        self.assertRaises(ValueError, s.open, self.filehandle.name)

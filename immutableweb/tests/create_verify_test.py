@@ -1,21 +1,35 @@
 #!/usr/bin/env python3
+import os
+from nose.tools import assert_equals
+from tempfile import NamedTemporaryFile
+
 from immutableweb import stream
 from immutableweb import crypto
-from nose.tools import assert_equals
 
 class TestCreateAndVerifyStream:
+
+    def setUp(self):
+        self.filehandle = NamedTemporaryFile(delete=False)
+
+
+    def tearDown(self):
+        self.filehandle.close()
+        try:
+            os.unlink(self.filehandle.name)
+        except IOError:
+            pass
 
     def test_create_and_verify(self):
         blocks = [b"random", b"crap"]
         s = stream.Stream()
         s.set_stream_signature_keys(crypto.make_key_pair())
-        s.create("__test.iw", force=True)
+        s.create_with_handle(self.filehandle)
         for b in blocks:
             s.append(content=b)
         s.close()
 
         reads = []
-        with stream.Stream("__test.iw") as s:
+        with stream.Stream(self.filehandle.name) as s:
             block_index = 1
             while True:
                 metadata, content = s.read(block_index)

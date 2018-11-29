@@ -1,21 +1,36 @@
 #!/usr/bin/env python3
+import unittest
+import os
+from tempfile import NamedTemporaryFile
+from nose.tools import assert_equals
+
 from immutableweb import stream
 from immutableweb import crypto
-from nose.tools import assert_equals
-import unittest
 
 class TestStreamBlocks(unittest.TestCase):
+
+    def setUp(self):
+        self.filehandle = NamedTemporaryFile(delete=False)
+
+
+    def tearDown(self):
+        self.filehandle.close()
+        try:
+            os.unlink(self.filehandle.name)
+        except IOError:
+            pass
+
 
     def test_block_seek(self):
         s = stream.Stream()
         s.set_stream_signature_keys(crypto.make_key_pair())
-        s.create("__test.iw", force=True)
+        s.create_with_handle(self.filehandle)
         s.append(b"1")
         s.append(b"2")
         s.append(b"3")
         s.close()
 
-        s = stream.Stream("__test.iw")
+        s = stream.Stream(self.filehandle.name)
         self.assertEqual(s.read(1)[1], b"1")
         self.assertEqual(s.read(2)[1], b"2")
         self.assertEqual(s.read(3)[1], b"3")
@@ -28,13 +43,13 @@ class TestStreamBlocks(unittest.TestCase):
         s = stream.Stream()
         public_key, private_key = crypto.make_key_pair()
         s.set_stream_signature_keys(public_key, private_key)
-        s.create("__test.iw", force=True)
+        s.create_with_handle(self.filehandle)
         s.append(b"1")
         s.append(b"2")
         s.append(b"3")
         s.close()
 
-        s = stream.Stream("__test.iw", append=True)
+        s = stream.Stream(self.filehandle.name, append=True)
         try:
             s.verify()
             self.assertEquals(s.state, stream.Stream.STATE_VERIFIED)
@@ -47,7 +62,7 @@ class TestStreamBlocks(unittest.TestCase):
         s.append(b"4")
         s.close()
 
-        s = stream.Stream("__test.iw")
+        s = stream.Stream(self.filehandle.name)
         self.assertEqual(s.verify(), 5)
         s.close()
 
@@ -56,7 +71,7 @@ class TestStreamBlocks(unittest.TestCase):
 
         s = stream.Stream()
         s.set_stream_signature_keys(crypto.make_key_pair())
-        s.create("__test.iw", force=True)
+        s.create_with_handle(self.filehandle)
         s.append(b"1")
         s.append(b"2")
         s.read(1)
