@@ -39,22 +39,61 @@ def keys(force, base_filename):
 
 
 @cli.command(name="create")
+@click.argument("stream_name", nargs=1)
 @click.argument("public_key", nargs=1)
 @click.argument("private_key", nargs=1)
-@click.argument("filename", nargs=1)
-def create(public_key, private_key, filename):
+def create(stream_name, public_key, private_key):
     s = stream.Stream()
     s.set_stream_signature_keys_filename(public_key, private_key)
-    s.create(filename)
+    s.create(stream_name)
     s.close()
 
 
 @cli.command(name="verify")
-@click.argument("filename", nargs=1)
-def verify(filename):
+@click.argument("stream_name", nargs=1)
+def verify(stream_name):
     s = stream.Stream()
-    s.open(filename)
+    s.open(stream_name)
     s.verify()
+    s.close()
+
+
+@cli.command(name="append")
+@click.argument("stream_name", nargs=1)
+@click.argument("public_key", nargs=1)
+@click.argument("private_key", nargs=1)
+@click.argument("files", nargs=-1)
+def append(stream_name, public_key, private_key, files):
+    s = stream.Stream()
+    s.set_stream_signature_keys_filename(public_key, private_key)
+    s.open(stream_name, append=True)
+    s.verify()
+    for filename in files:
+        with open(filename, "rb") as f:
+            block = f.read()
+        s.append(block, {"__original_filename" : os.path.basename(filename)})
+    s.close()
+
+
+@cli.command(name="dump")
+@click.argument("stream_name", nargs=1)
+@click.argument("dest", nargs=1)
+def verify(stream_name, dest = ""):
+    s = stream.Stream()
+    s.open(stream_name)
+    num_blocks = s.verify()
+    for i in range(1, num_blocks):
+        metadata, block = s.read(i)
+        if "__original_filename" in metadata:
+            filename = metadata['__original_filename']
+        else:
+            filename = "block-%05d.block" % i
+
+        if dest:
+            filename = os.path.join(dest, filename)
+        with open(filename, "wb") as f:
+            f.write(block)
+        
     s.close()
 
 
