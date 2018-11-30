@@ -46,6 +46,7 @@ def create(stream_name, public_key, private_key):
     s = stream.Stream()
     s.set_stream_signature_keys_filename(public_key, private_key)
     s.create(stream_name)
+    print("create stream %s" % s.uuid)
     s.close()
 
 
@@ -54,6 +55,7 @@ def create(stream_name, public_key, private_key):
 def verify(stream_name):
     s = stream.Stream()
     s.open(stream_name)
+    print("verify stream %s" % s.uuid)
     s.verify()
     s.close()
 
@@ -68,6 +70,7 @@ def append(stream_name, public_key, private_key, files):
     s.set_stream_signature_keys_filename(public_key, private_key)
     s.open(stream_name, append=True)
     s.verify()
+    print("append files to stream %s" % s.uuid)
     for filename in files:
         with open(filename, "rb") as f:
             block = f.read()
@@ -81,6 +84,7 @@ def append(stream_name, public_key, private_key, files):
 def verify(stream_name, dest = ""):
     s = stream.Stream()
     s.open(stream_name)
+    print("dump files from stream %s" % s.uuid)
     num_blocks = s.verify()
     for i in range(1, num_blocks):
         metadata, block = s.read(i)

@@ -3,12 +3,14 @@ import os
 import struct
 from hashlib import sha256
 import ujson
+import uuid
 import base64
 
 from immutableweb import crypto
 from immutableweb import exception as exc
 
-MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY = "_stream_signature-public_key"
+MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY = "_stream_signature_public_key"
+MANIFEST_METADATA_STREAM_UUID = "_stream_uuid"
 
 class Stream(object):
 
@@ -46,6 +48,9 @@ class Stream(object):
         # keep track of the last block's hash value
         self.last_block_hash = None
 
+        # clear our the UUID until a file is created or it is read from a stream
+        self._uuid = None
+
         if filename:
             self.open(filename, append)
 
@@ -64,6 +69,16 @@ class Stream(object):
             Return the state of the current stream. Return one of the STATE_* values from above.
         '''
         return self.current_state
+
+
+    @property
+    def uuid(self):
+        '''
+            Return the uuid of the current stream. Returns None if valid stream has been loaded.
+        '''
+        if self._uuid:
+            return self._uuid.hex
+        return ""
 
 
     def set_stream_signature_keys(self, public_key, private_key = None):
@@ -256,6 +271,7 @@ class Stream(object):
         if self.current_block == 0:
             self.stream_signature_key_public = crypto.deserialize_public_key( \
                 bytes(metadata[MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY], "utf-8"))
+            self._uuid = uuid.UUID(metadata[MANIFEST_METADATA_STREAM_UUID])
 
         try:
             crypto.verify(self.stream_signature_key_public, block[:(len(block) - self.UINT32_SIZE - signature_len)], signature)
@@ -287,7 +303,9 @@ class Stream(object):
         if not self.stream_signature_key_private: 
             raise exc.MissingKey("Private stream key is missing.")
 
+        self._uuid = uuid.uuid4()
         manifest_metadata[MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY] = crypto.serialize_public_key(self.stream_signature_key_public) 
+        manifest_metadata[MANIFEST_METADATA_STREAM_UUID] = self._uuid.hex
         self.last_block_hash = sha256()
 
         self.current_state = self.STATE_WRITE_VERIFIED
@@ -355,6 +373,7 @@ class Stream(object):
         self.current_block = -1
         self.current_block_pos = -1
         self.last_block_hash = None
+        self._uuid = None
 
 
     def verify(self):

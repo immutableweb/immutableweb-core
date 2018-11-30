@@ -107,9 +107,24 @@ class TestKeys(unittest.TestCase):
         s = stream.Stream(self.filehandle.name, append=True)
         s.verify()
         (read_metadata, content) = s.read(0)
-        if '_stream_signature-public_key' not in read_metadata:
+        if stream.MANIFEST_METADATA_STREAM_SIGNATURE_PUBLIC_KEY not in read_metadata:
             self.fail("Stream signature public key not found in manifest data.")
 
         (read_metadata, content) = s.read(2)
         self.assertEqual(read_metadata, metadata2)
+        s.close()
+
+
+    def test_stream_id(self):
+
+        s = stream.Stream()
+        self.assertEqual(s.uuid, "")
+        s.set_stream_signature_keys(crypto.make_key_pair())
+        s.create_with_handle(self.filehandle)
+        self.assertEqual(len(s.uuid), 32)
+        s.close()
+
+        s = stream.Stream(self.filehandle.name)
+        s.verify()
+        self.assertEqual(len(s.uuid), 32)
         s.close()
