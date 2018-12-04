@@ -118,10 +118,11 @@ class TestKeys(unittest.TestCase):
     def test_stream_id(self):
 
         s = stream.Stream()
-        self.assertEqual(s.uuid, "")
+        first_uuid = s.uuid
         s.set_stream_signature_keys(crypto.make_key_pair())
         s.create_with_handle(self.filehandle)
         self.assertEqual(len(s.uuid), 32)
+        self.assertNotEqual(first_uuid, s.uuid)
         s.close()
 
         s = stream.Stream(self.filehandle.name)

@@ -48,8 +48,8 @@ class Stream(object):
         # keep track of the last block's hash value
         self.last_block_hash = None
 
-        # clear our the UUID until a file is created or it is read from a stream
-        self._uuid = None
+        # generate a UUID in case we want to know it before writing it to disk
+        self._uuid = uuid.uuid4()
 
         if filename:
             self.open(filename, append)
