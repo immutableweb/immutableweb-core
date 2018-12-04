@@ -2,7 +2,7 @@
 
 from distutils.core import setup
 
-setup(name='Immutable Web',
+setup(name='ImmutableWeb',
       version='0.1',
       description='Python modules for creating immutable web streams',
       long_description=open('README.md').read(),
